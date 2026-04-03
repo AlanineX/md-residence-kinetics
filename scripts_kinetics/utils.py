@@ -583,16 +583,23 @@ def write_summary(region, sp_result, fit1, fit2, out_path, do_exp_fit=True):
         fh.write("\n".join(lines) + "\n")
 
 
-def write_aggregate_csvs(all_results, output_dir):
-    """Write single_exp and bi_exp aggregate CSVs from list of (name, fit1, fit2)."""
+def write_aggregate_csvs(all_results, output_dir, count_data=None):
+    """Write single_exp and bi_exp aggregate CSVs from list of (name, fit1, fit2).
+
+    count_data: optional dict {name: (avg_residues, std_residues)} for occupancy columns.
+    """
     os.makedirs(output_dir, exist_ok=True)
+    if count_data is None:
+        count_data = {}
 
     single_fields = [
-        "Region", "alpha", "tau", "c", "perr_tau", "perr_c",
+        "Region", "avg_count", "std_count",
+        "alpha", "tau", "c", "perr_tau", "perr_c",
         "R2", "apparent_res_time", "AIC", "AICc", "BIC",
     ]
     bi_fields = [
-        "Region", "alpha1", "tau1", "alpha2", "tau2", "c", "u",
+        "Region", "avg_count", "std_count",
+        "alpha1", "tau1", "alpha2", "tau2", "c", "u",
         "perr_tau1", "perr_tau2", "perr_c", "perr_u",
         "R2", "apparent_res_time", "fitted_res_time",
         "t_half_fast", "t_half_slow", "t_half_overall",
@@ -608,9 +615,12 @@ def write_aggregate_csvs(all_results, output_dir):
         return f"{v:.{prec}f}"
 
     for name, fit1, fit2 in all_results:
+        avg_c, std_c = count_data.get(name, (None, None))
         if fit1 is not None:
             single_rows.append({
                 "Region": name,
+                "avg_count": _fmt(avg_c, 1),
+                "std_count": _fmt(std_c, 1),
                 "alpha": _fmt(fit1["alpha"]),
                 "tau": _fmt(fit1["tau"]),
                 "c": _fmt(fit1["c"]),
@@ -625,6 +635,8 @@ def write_aggregate_csvs(all_results, output_dir):
         if fit2 is not None:
             bi_rows.append({
                 "Region": name,
+                "avg_count": _fmt(avg_c, 1),
+                "std_count": _fmt(std_c, 1),
                 "alpha1": _fmt(fit2["alpha1"]),
                 "tau1": _fmt(fit2["tau1"]),
                 "alpha2": _fmt(fit2["alpha2"]),

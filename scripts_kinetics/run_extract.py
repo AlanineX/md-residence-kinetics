@@ -78,6 +78,7 @@ def main():
     # Process each region: extract -> fit -> plot
     summary_results = []   # (name, tau_res_ns, time_taken)
     all_fit_results = []   # (name, fit1, fit2) for aggregate CSVs
+    count_data = {}        # {name: (avg, std)} for aggregate CSVs
 
     for region in regions:
         print(f"\n== Region: {region.name} ==")
@@ -140,10 +141,11 @@ def main():
         tau_res = float(np.trapezoid(sp["S"] - c_est, sp["tau_ns"]))
         summary_results.append((region.name, tau_res, sp["time_taken"]))
         all_fit_results.append((region.name, fit1, fit2))
+        count_data[region.name] = (sp["avg_residues"], sp["std_residues"])
 
     # Aggregate CSVs
     if all_fit_results:
-        write_aggregate_csvs(all_fit_results, cfg.OUT_DIR)
+        write_aggregate_csvs(all_fit_results, cfg.OUT_DIR, count_data=count_data)
 
     # Final summary
     print("\n" + "=" * 60)
