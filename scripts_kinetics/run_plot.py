@@ -15,11 +15,18 @@ import glob
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+try:
+    from . import config_plot as cfg
+    from .fitting import fit_single_exp, fit_bi_exp
+    from .plotting import plot_sp_and_fits
+    from .utils import write_aggregate_csvs
+except ImportError:
+    import config_plot as cfg
+    from fitting import fit_single_exp, fit_bi_exp
+    from plotting import plot_sp_and_fits
+    from utils import write_aggregate_csvs
+
 import numpy as np
-import config_plot as cfg
-from fitting import fit_single_exp, fit_bi_exp
-from plotting import plot_sp_and_fits
-from utils import write_aggregate_csvs
 
 
 def main():

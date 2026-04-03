@@ -13,7 +13,10 @@ try:
 except Exception:
     tqdm = None
 
-from utils import close_universe
+try:
+    from .utils import close_universe
+except ImportError:
+    from utils import close_universe
 
 
 # ── Core SP algorithm ────────────────────────────────────────────────────────
@@ -209,11 +212,11 @@ def compute_sp(region, top_path, traj_path, start_frame=0, stop_frame=None,
 
     # Don't close universe — reuse to avoid MDA XTC re-load crash
 
-    # Early exit: if count is 0 over sampled frames, no contacts exist
+    # Warn if downsampled count is zero, but do NOT skip —
+    # rare/short-lived contacts can be missed by coarse sampling.
     if avg_residues == 0.0 and n_count_frames > 0:
-        elapsed = time.perf_counter() - t0_wall
-        print(f"  WARNING: No valid data for {region.name} — skipping ({elapsed:.2f}s)")
-        return None
+        print(f"  WARNING: Zero contacts in downsampled count ({n_count_frames} frames, "
+              f"step={count_step}). Proceeding anyway — contacts may exist at other frames.")
 
     # Partition into blocks (strided-frame space)
     edges_k = np.linspace(0, n_strided_total, n_blocks + 1, dtype=int)

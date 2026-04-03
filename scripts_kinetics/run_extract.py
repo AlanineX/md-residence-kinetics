@@ -15,15 +15,26 @@ import warnings
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+try:
+    from . import config_extract as cfg
+    from .kinetics import compute_sp
+    from .fitting import fit_single_exp, fit_bi_exp
+    from .plotting import plot_sp_and_fits
+    from .utils import (
+        make_regions, validate_and_compute_settings,
+        save_sp_csv, write_run_log, write_summary, write_aggregate_csvs,
+    )
+except ImportError:
+    import config_extract as cfg
+    from kinetics import compute_sp
+    from fitting import fit_single_exp, fit_bi_exp
+    from plotting import plot_sp_and_fits
+    from utils import (
+        make_regions, validate_and_compute_settings,
+        save_sp_csv, write_run_log, write_summary, write_aggregate_csvs,
+    )
+
 import numpy as np
-import config_extract as cfg
-from kinetics import compute_sp
-from fitting import fit_single_exp, fit_bi_exp
-from plotting import plot_sp_and_fits
-from utils import (
-    make_regions, validate_and_compute_settings,
-    save_sp_csv, write_run_log, write_summary, write_aggregate_csvs,
-)
 
 
 def main():
@@ -47,9 +58,12 @@ def main():
         warnings.warn("Trajectory dt not set; assuming 10 ps per frame.")
         dt_ps = 10.0
     dt_ns = float(dt_ps) / 1000.0
-    n_frames = len(u.trajectory)
+    n_frames_total = len(u.trajectory)
+    start = max(0, cfg.START_FRAME or 0)
+    stop = min(n_frames_total, cfg.STOP_FRAME) if cfg.STOP_FRAME is not None else n_frames_total
+    n_frames = stop - start
 
-    # Validate and compute frame-based settings
+    # Validate and compute frame-based settings (using effective window)
     validate_and_compute_settings(regions, dt_ns, n_frames)
 
     # Write run log
@@ -58,7 +72,7 @@ def main():
         cfg.START_FRAME, cfg.STOP_FRAME, cfg.INTERMITTENCY,
         cfg.COUNT_STATS_MAX_FRAMES, cfg.FIRST_SHELL_A,
         cfg.WATER_O_SELECTION, cfg.DO_EXP_FIT, cfg.N_PROCS,
-        dt_ns=dt_ns, n_frames=n_frames,
+        dt_ns=dt_ns, n_frames=n_frames_total,
     )
 
     # Process each region: extract -> fit -> plot
