@@ -17,12 +17,12 @@ if __name__ == "__main__" and __package__ is None:
 
 try:
     from . import config_plot as cfg
-    from .fitting import fit_single_exp, fit_bi_exp
+    from .fitting import fit_single_exp, fit_bi_exp, model_free_metrics
     from .plotting import plot_sp_and_fits
     from .utils import write_aggregate_csvs
 except ImportError:
     import config_plot as cfg
-    from fitting import fit_single_exp, fit_bi_exp
+    from fitting import fit_single_exp, fit_bi_exp, model_free_metrics
     from plotting import plot_sp_and_fits
     from utils import write_aggregate_csvs
 
@@ -40,6 +40,7 @@ def main():
     print(f"Found {len(csv_files)} CSV files in {cfg.SOURCE_PATH}")
 
     all_fit_results = []  # (name, fit1, fit2)
+    mf_data = {}          # {name: dict} model-free metrics
 
     for csv_path in csv_files:
         name = os.path.basename(csv_path).replace("sp_", "").replace(".csv", "")
@@ -94,10 +95,17 @@ def main():
             )
             print(f"  Plots saved to {cfg.OUTPUT_PATH}")
 
+        # Model-free metrics
+        mf = model_free_metrics(tau_ns, S)
+        mf_data[name] = mf
+        for k, v in sorted(mf.items()):
+            if v is not None:
+                print(f"    {k} = {v:.6f}")
+
         all_fit_results.append((name, fit1, fit2))
 
     # Aggregate CSVs
-    write_aggregate_csvs(all_fit_results, cfg.OUTPUT_PATH)
+    write_aggregate_csvs(all_fit_results, cfg.OUTPUT_PATH, model_free_data=mf_data)
     print(f"\nDone. Results in: {cfg.OUTPUT_PATH}")
 
 

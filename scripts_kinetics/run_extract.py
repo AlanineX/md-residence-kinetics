@@ -18,7 +18,7 @@ if __name__ == "__main__" and __package__ is None:
 try:
     from . import config_extract as cfg
     from .kinetics import compute_sp
-    from .fitting import fit_single_exp, fit_bi_exp
+    from .fitting import fit_single_exp, fit_bi_exp, model_free_metrics
     from .plotting import plot_sp_and_fits
     from .utils import (
         make_regions, validate_and_compute_settings,
@@ -27,7 +27,7 @@ try:
 except ImportError:
     import config_extract as cfg
     from kinetics import compute_sp
-    from fitting import fit_single_exp, fit_bi_exp
+    from fitting import fit_single_exp, fit_bi_exp, model_free_metrics
     from plotting import plot_sp_and_fits
     from utils import (
         make_regions, validate_and_compute_settings,
@@ -79,6 +79,7 @@ def main():
     summary_results = []   # (name, tau_res_ns, time_taken)
     all_fit_results = []   # (name, fit1, fit2) for aggregate CSVs
     count_data = {}        # {name: (avg, std)} for aggregate CSVs
+    mf_data = {}           # {name: dict} model-free metrics
 
     for region in regions:
         print(f"\n== Region: {region.name} ==")
@@ -137,6 +138,13 @@ def main():
             )
             print(f"  Plots saved to {plot_dir}")
 
+        # Model-free metrics (tau_max-independent)
+        mf = model_free_metrics(sp["tau_ns"], sp["S"])
+        mf_data[region.name] = mf
+        for k, v in sorted(mf.items()):
+            if v is not None:
+                print(f"    {k} = {v:.6f}")
+
         c_est = float(sp["S"][-1]) if sp["S"].size else 0.0
         tau_res = float(np.trapezoid(sp["S"] - c_est, sp["tau_ns"]))
         summary_results.append((region.name, tau_res, sp["time_taken"]))
@@ -145,7 +153,8 @@ def main():
 
     # Aggregate CSVs
     if all_fit_results:
-        write_aggregate_csvs(all_fit_results, cfg.OUT_DIR, count_data=count_data)
+        write_aggregate_csvs(all_fit_results, cfg.OUT_DIR,
+                             count_data=count_data, model_free_data=mf_data)
 
     # Final summary
     print("\n" + "=" * 60)

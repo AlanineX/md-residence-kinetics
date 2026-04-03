@@ -66,6 +66,30 @@ def fitted_residence_time(alpha1, tau1, alpha2, tau2):
     return alpha1 * tau1 + alpha2 * tau2
 
 
+def model_free_metrics(t, S, horizons=(1.0, 2.0, 5.0)):
+    """Compute tau_max-independent metrics from raw SP curve.
+
+    Returns dict with RMST(t*) and S(t*) at each horizon.
+    RMST(t*) = integral_0^{t*} S(tau) dtau  (no model, no c subtraction).
+    S(t*)    = raw survival probability at t*.
+    """
+    t = np.asarray(t, dtype=float)
+    S = np.asarray(S, dtype=float)
+    result = {}
+    for h in horizons:
+        mask = t <= h + 1e-6
+        if mask.sum() >= 2:
+            result[f"RMST_{h:.0f}ns"] = float(np.trapezoid(S[mask], t[mask]))
+        else:
+            result[f"RMST_{h:.0f}ns"] = None
+        idx = np.argmin(np.abs(t - h))
+        if abs(t[idx] - h) < 0.02:
+            result[f"S_{h:.0f}ns"] = float(S[idx])
+        else:
+            result[f"S_{h:.0f}ns"] = None
+    return result
+
+
 def half_lives(tau1, tau2):
     ln2 = np.log(2.0)
     return tau1 * ln2, tau2 * ln2

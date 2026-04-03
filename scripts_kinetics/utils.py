@@ -583,28 +583,38 @@ def write_summary(region, sp_result, fit1, fit2, out_path, do_exp_fit=True):
         fh.write("\n".join(lines) + "\n")
 
 
-def write_aggregate_csvs(all_results, output_dir, count_data=None):
+def write_aggregate_csvs(all_results, output_dir, count_data=None,
+                         model_free_data=None):
     """Write single_exp and bi_exp aggregate CSVs from list of (name, fit1, fit2).
 
     count_data: optional dict {name: (avg_residues, std_residues)} for occupancy columns.
+    model_free_data: optional dict {name: dict} from fitting.model_free_metrics().
     """
     os.makedirs(output_dir, exist_ok=True)
     if count_data is None:
         count_data = {}
+    if model_free_data is None:
+        model_free_data = {}
+
+    # Collect model-free field names from first entry
+    mf_fields = []
+    for v in model_free_data.values():
+        mf_fields = sorted(v.keys())
+        break
 
     single_fields = [
         "Region", "avg_count", "std_count",
         "alpha", "tau", "c", "perr_tau", "perr_c",
-        "R2", "apparent_res_time", "AIC", "AICc", "BIC",
-    ]
+        "R2", "apparent_res_time",
+    ] + mf_fields + ["AIC", "AICc", "BIC"]
+
     bi_fields = [
         "Region", "avg_count", "std_count",
         "alpha1", "tau1", "alpha2", "tau2", "c", "u",
         "perr_tau1", "perr_tau2", "perr_c", "perr_u",
         "R2", "apparent_res_time", "fitted_res_time",
         "t_half_fast", "t_half_slow", "t_half_overall",
-        "AIC", "AICc", "BIC",
-    ]
+    ] + mf_fields + ["AIC", "AICc", "BIC"]
 
     single_rows = []
     bi_rows = []
@@ -616,8 +626,11 @@ def write_aggregate_csvs(all_results, output_dir, count_data=None):
 
     for name, fit1, fit2 in all_results:
         avg_c, std_c = count_data.get(name, (None, None))
+        mf = model_free_data.get(name, {})
+        mf_row = {k: _fmt(v) for k, v in mf.items()}
+
         if fit1 is not None:
-            single_rows.append({
+            row = {
                 "Region": name,
                 "avg_count": _fmt(avg_c, 1),
                 "std_count": _fmt(std_c, 1),
@@ -631,9 +644,11 @@ def write_aggregate_csvs(all_results, output_dir, count_data=None):
                 "AIC": _fmt(fit1["aic"], 4),
                 "AICc": _fmt(fit1["aicc"], 4),
                 "BIC": _fmt(fit1["bic"], 4),
-            })
+            }
+            row.update(mf_row)
+            single_rows.append(row)
         if fit2 is not None:
-            bi_rows.append({
+            row = {
                 "Region": name,
                 "avg_count": _fmt(avg_c, 1),
                 "std_count": _fmt(std_c, 1),
@@ -656,7 +671,9 @@ def write_aggregate_csvs(all_results, output_dir, count_data=None):
                 "AIC": _fmt(fit2["aic"], 4),
                 "AICc": _fmt(fit2["aicc"], 4),
                 "BIC": _fmt(fit2["bic"], 4),
-            })
+            }
+            row.update(mf_row)
+            bi_rows.append(row)
 
     if single_rows:
         path = os.path.join(output_dir, "single_exp_fitting_results.csv")
