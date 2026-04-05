@@ -14,18 +14,19 @@ More examples in [`examples/`](examples/).
 
 ```bash
 git clone https://github.com/AlanineX/md-residence-kinetics.git
-cd md-residence-kinetics/scripts_kinetics
+cd md-residence-kinetics
 pip install -r requirements.txt
 ```
 
 ## Quick Start
 
 ```bash
-# 1. Copy and edit the example config
-cp config_extract_example.py config_extract.py
-# Edit config_extract.py: set TOP_PATH, TRAJ_PATH, OUT_DIR, and targets
+# 1. Copy the example config into the package directory
+cp config_extract_example.py scripts_kinetics/config_extract.py
+# Edit scripts_kinetics/config_extract.py: set TOP_PATH, TRAJ_PATH, OUT_DIR, and targets
 
 # 2. Run extraction + fitting
+cd scripts_kinetics
 python run_extract.py
 
 # 3. (Optional) Re-fit/re-plot existing SP CSVs with different settings
