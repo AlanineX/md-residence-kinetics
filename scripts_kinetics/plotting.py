@@ -6,7 +6,10 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib import patches as mpatches
 
-from fitting import f1_constrained, f2_constrained
+try:
+    from .fitting import f1_constrained, f2_constrained
+except ImportError:
+    from fitting import f1_constrained, f2_constrained
 
 
 def plot_sp_and_fits(tau, S, fit1, fit2, name, outdir, dpi=150, alpha=0.65,
