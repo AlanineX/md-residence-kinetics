@@ -2,6 +2,14 @@
 
 Survival probability (SP) analysis for water and solute residence kinetics from MD trajectories. Computes SP decay curves, fits single/bi-exponential models, and provides model-free metrics (RMST).
 
+## Example Output
+
+| SP decay + bi-exponential fit | Fit parameters |
+|:---:|:---:|
+| ![SP fit](examples/fit_site_pocket.png) | ![equations](examples/fit_site_pocket_equations.png) |
+
+More examples in [`examples/`](examples/).
+
 ## Installation
 
 ```bash
@@ -115,6 +123,14 @@ TARGET_CONFIGS = [
 | `t_half_overall` | Time when S(t) drops to midpoint between 1 and c |
 | `RMST_1ns`, `RMST_2ns`, `RMST_5ns` | Restricted mean survival time at 1/2/5 ns horizons (model-free) |
 | `S_1ns`, `S_2ns`, `S_5ns` | Raw SP value at 1/2/5 ns (model-free) |
+
+## More Examples
+
+**Different binding sites show distinct kinetics:**
+
+| Site 0 (fast exchange) | Site 47 (slow exchange) |
+|:---:|:---:|
+| ![site_0](examples/fit_site_0.png) | ![site_47](examples/fit_site_47.png) |
 
 ## Known Issues
 
