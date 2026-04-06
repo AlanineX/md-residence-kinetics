@@ -206,9 +206,11 @@ def compute_sp(region, top_path, traj_path, start_frame=0, stop_frame=None,
             std_residues = float(np.std(counts_list))
             if tc > 0:
                 count_fps = len(counts_list) / tc
-            print(f"  Count: {avg_residues:.1f} +/- {std_residues:.1f} "
-                  f"({count_fps:.2f} frames/s)" if count_fps else
-                  f"  Count: {avg_residues:.1f} +/- {std_residues:.1f}")
+            if count_fps:
+                print(f"  Count: {avg_residues:.1f} +/- {std_residues:.1f} "
+                      f"({count_fps:.1f} fps, {tc:.1f}s)")
+            else:
+                print(f"  Count: {avg_residues:.1f} +/- {std_residues:.1f} ({tc:.1f}s)")
 
     # Don't close universe — reuse to avoid MDA XTC re-load crash
 

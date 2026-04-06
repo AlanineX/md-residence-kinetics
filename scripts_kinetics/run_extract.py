@@ -9,6 +9,7 @@ Usage:
 
 import os
 import sys
+import time
 import warnings
 
 # Allow running directly from scripts_kinetics/
@@ -37,10 +38,20 @@ except ImportError:
 import numpy as np
 
 
+def _elapsed(t0):
+    """Format elapsed time since t0."""
+    s = time.perf_counter() - t0
+    if s < 60:
+        return f"{s:.1f}s"
+    return f"{s/60:.1f}min"
+
+
 def main():
+    t_start = time.perf_counter()
     os.makedirs(cfg.OUT_DIR, exist_ok=True)
 
     # Build regions from target configs (returns shared Universe to avoid re-load crash)
+    t0 = time.perf_counter()
     regions, u = make_regions(
         cfg.TOP_PATH, cfg.TRAJ_PATH, cfg.TARGET_CONFIGS, cfg.OUT_DIR,
         cutoff_a=cfg.FIRST_SHELL_A,
@@ -51,6 +62,7 @@ def main():
         calc_per_residue_shell=getattr(cfg, "CALC_PER_RESIDUE_SHELL", None),
         per_residue_settings=getattr(cfg, "PER_RESIDUE_SETTINGS", None),
     )
+    print(f"[timer] Universe + regions loaded in {_elapsed(t0)}")
 
     # Get trajectory info for validation (reuse universe)
     dt_ps = getattr(u.trajectory, "dt", None)
@@ -64,7 +76,9 @@ def main():
     n_frames = stop - start
 
     # Validate and compute frame-based settings (using effective window)
+    t0 = time.perf_counter()
     validate_and_compute_settings(regions, dt_ns, n_frames)
+    print(f"[timer] Validation in {_elapsed(t0)}")
 
     # Write run log
     write_run_log(
@@ -81,8 +95,9 @@ def main():
     count_data = {}        # {name: (avg, std)} for aggregate CSVs
     mf_data = {}           # {name: dict} model-free metrics
 
-    for region in regions:
-        print(f"\n== Region: {region.name} ==")
+    for i, region in enumerate(regions):
+        t_region = time.perf_counter()
+        print(f"\n== Region {i+1}/{len(regions)}: {region.name} ==")
 
         # Step 1: Compute survival probability (pass universe to avoid re-load)
         sp = compute_sp(
@@ -96,7 +111,6 @@ def main():
         )
 
         if sp is None:
-            # No probe ever visited this region — skip it
             summary_results.append((region.name, 0.0, 0.0))
             continue
 
@@ -104,6 +118,7 @@ def main():
         save_sp_csv(sp["tau_ns"], sp["S"], region.csv_path)
 
         # Step 3: Fit
+        t0 = time.perf_counter()
         fit1 = fit2 = None
         if cfg.DO_EXP_FIT:
             fit1 = fit_single_exp(sp["tau_ns"], sp["S"])
@@ -121,6 +136,7 @@ def main():
                 print(f"    Fitted residence time: {fit2['fitted_res_time']:.4f} ns")
             else:
                 print("  2-exp fit failed.")
+        print(f"  [timer] Fitting in {_elapsed(t0)}")
 
         # Step 4: Write summary
         write_summary(region, sp, fit1, fit2, region.txt_path,
@@ -128,6 +144,7 @@ def main():
 
         # Step 5: Plot
         if cfg.DO_PLOT:
+            t0 = time.perf_counter()
             plot_dir = os.path.join(cfg.OUT_DIR, "plots")
             plot_sp_and_fits(
                 sp["tau_ns"], sp["S"], fit1, fit2,
@@ -136,7 +153,7 @@ def main():
                 n_bins=cfg.PLOT_N_BINS,
                 bin_spacing_factor=cfg.PLOT_BIN_SPACING,
             )
-            print(f"  Plots saved to {plot_dir}")
+            print(f"  [timer] Plotting in {_elapsed(t0)}")
 
         # Model-free metrics (tau_max-independent)
         mf = model_free_metrics(sp["tau_ns"], sp["S"])
@@ -150,16 +167,20 @@ def main():
         summary_results.append((region.name, tau_res, sp["time_taken"]))
         all_fit_results.append((region.name, fit1, fit2))
         count_data[region.name] = (sp["avg_residues"], sp["std_residues"])
+        print(f"  [timer] Region total: {_elapsed(t_region)}")
 
     # Aggregate CSVs
     if all_fit_results:
+        t0 = time.perf_counter()
         write_aggregate_csvs(all_fit_results, cfg.OUT_DIR,
                              count_data=count_data, model_free_data=mf_data)
+        print(f"[timer] Aggregate CSVs in {_elapsed(t0)}")
 
     # Final summary
     print("\n" + "=" * 60)
     for name, tau_ns, t in summary_results:
         print(f"[{name}] Integral residence time = {tau_ns:.6f} ns ({t:.2f} s)")
+    print(f"[timer] Total pipeline: {_elapsed(t_start)}")
     print(f"Done. SP CSVs in: {cfg.OUT_DIR}")
 
 
