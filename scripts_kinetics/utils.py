@@ -430,8 +430,12 @@ def validate_and_compute_settings(regions, dt_traj_ns, n_frames_total):
 
 def save_sp_csv(tau_ns, S, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    np.savetxt(path, np.column_stack([tau_ns, S]),
+    # Atomic write: write to temp file then rename, so partial writes
+    # from a killed job never leave a corrupt CSV at the final path.
+    tmp_path = path + ".tmp"
+    np.savetxt(tmp_path, np.column_stack([tau_ns, S]),
                delimiter=",", header="tau_ns,SP", comments="", fmt="%.8f")
+    os.replace(tmp_path, path)
 
 
 def write_run_log(regions, out_dir, top_path, traj_path,

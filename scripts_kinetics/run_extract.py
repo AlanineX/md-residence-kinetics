@@ -95,9 +95,35 @@ def main():
     count_data = {}        # {name: (avg, std)} for aggregate CSVs
     mf_data = {}           # {name: dict} model-free metrics
 
+    skipped = 0
     for i, region in enumerate(regions):
         t_region = time.perf_counter()
         print(f"\n== Region {i+1}/{len(regions)}: {region.name} ==")
+
+        # Clean up stale temp files from killed jobs
+        tmp_path = region.csv_path + ".tmp"
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+        # Resume protection: skip if output CSV already exists
+        if os.path.exists(region.csv_path) and os.path.getsize(region.csv_path) > 0:
+            print(f"  [SKIP] {region.csv_path} already exists, skipping.")
+            skipped += 1
+            # Load existing data for aggregate summaries
+            try:
+                data = np.loadtxt(region.csv_path, delimiter=",", skiprows=1)
+                t_arr, S_arr = data[:, 0], data[:, 1]
+                fit1 = fit_single_exp(t_arr, S_arr) if cfg.DO_EXP_FIT else None
+                fit2 = fit_bi_exp(t_arr, S_arr) if cfg.DO_EXP_FIT else None
+                mf = model_free_metrics(t_arr, S_arr)
+                mf_data[region.name] = mf
+                c_est = float(S_arr[-1]) if S_arr.size else 0.0
+                tau_res = float(np.trapezoid(S_arr - c_est, t_arr))
+                summary_results.append((region.name, tau_res, 0.0))
+                all_fit_results.append((region.name, fit1, fit2))
+            except Exception as e:
+                print(f"  [WARN] Could not load existing CSV: {e}")
+            continue
 
         # Step 1: Compute survival probability (pass universe to avoid re-load)
         sp = compute_sp(
@@ -180,6 +206,8 @@ def main():
     print("\n" + "=" * 60)
     for name, tau_ns, t in summary_results:
         print(f"[{name}] Integral residence time = {tau_ns:.6f} ns ({t:.2f} s)")
+    if skipped:
+        print(f"[resume] Skipped {skipped}/{len(regions)} regions with existing output.")
     print(f"[timer] Total pipeline: {_elapsed(t_start)}")
     print(f"Done. SP CSVs in: {cfg.OUT_DIR}")
 
