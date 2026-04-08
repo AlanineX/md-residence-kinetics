@@ -1,11 +1,15 @@
-"""Configuration for survival probability extraction pipeline."""
+"""Configuration for survival probability extraction pipeline.
+
+Edit TOP_PATH / TRAJ_PATH / OUT_DIR for your own data, or set the
+KINETICS_TOP / KINETICS_TRAJ / KINETICS_OUT environment variables.
+"""
 
 import os
 
 # ================== TRAJECTORY ==================
-TOP_PATH  = os.path.expanduser("/path/to/data/0216_GROEL_ADP/out_1_whole_water_sk1_ref0.pdb")
-TRAJ_PATH = os.path.expanduser("/path/to/data/0216_GROEL_ADP/out_1_whole_water_sk1_20ns.xtc")
-OUT_DIR   = os.path.expanduser("/path/to/data/test_kinetics_water")
+TOP_PATH  = os.environ.get("KINETICS_TOP",  "/path/to/topology.pdb")
+TRAJ_PATH = os.environ.get("KINETICS_TRAJ", "/path/to/trajectory.xtc")
+OUT_DIR   = os.environ.get("KINETICS_OUT",  "./kinetics_results")
 
 # ================== FRAME RANGE ==================
 START_FRAME = 0
@@ -20,6 +24,7 @@ N_PROCS                = 10
 N_BLOCKS               = 1
 WATER_O_SELECTION      = "name OW OH2"
 CALC_PROTEIN_SHELL     = True # False
+KEEP_INTERMEDIATES     = True  # keep _intermediate/contacts and sp_origins after final CSV
 
 # Per-residue solvation: False/None = skip, True = all, "0:49" = positions 0-49
 CALC_PER_RESIDUE_SHELL = None

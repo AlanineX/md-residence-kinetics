@@ -14,6 +14,10 @@ class RegionSpec:
     csv_path: str
     txt_path: str
     description: str = ""
+    # Decomposed selection for new pipeline (capped_distance based)
+    static_sel: str = ""    # protein region of interest
+    mobile_sel: str = ""    # the molecule whose residence is tracked (water/solute)
+    cutoff_a: float = 3.5
     # User settings (ns)
     time_resolution_ns: float = 0.01
     tau_max_ns: float = 25.0
@@ -202,10 +206,14 @@ def make_regions(top, traj, target_configs, out_dir,
 
         if probe_type == "water":
             sel = f"byres ({water_o_selection} and around {cutoff_a:.1f} {core})"
+            static_sel = core
+            mobile_sel = water_o_selection
         elif probe_type == "solute":
             resnames = config.get("resnames", [])
             rn = " ".join(resnames) if isinstance(resnames, list) else str(resnames)
             sel = f"byres (resname {rn} and around {cutoff_a:.1f} ({core}))"
+            static_sel = core
+            mobile_sel = f"resname {rn}"
         else:
             raise ValueError(f"Unknown probe_type '{probe_type}' in config {name}")
 
@@ -240,6 +248,9 @@ def make_regions(top, traj, target_configs, out_dir,
             os.path.join(out_dir, f"sp_{name}.csv"),
             os.path.join(out_dir, f"summary_{name}.txt"),
             description=desc,
+            static_sel=static_sel,
+            mobile_sel=mobile_sel,
+            cutoff_a=float(cutoff_a),
             time_resolution_ns=float(config.get("time_resolution_ns", 0.01)),
             tau_max_ns=float(config.get("tau_max_ns", 25.0)),
             t0_spacing_ns=float(config.get("t0_spacing_ns", 0.5)),
@@ -260,6 +271,9 @@ def make_regions(top, traj, target_configs, out_dir,
             os.path.join(out_dir, "sp_protein_shell.csv"),
             os.path.join(out_dir, "summary_protein_shell.txt"),
             description="Water within cutoff of protein (global shell).",
+            static_sel="protein",
+            mobile_sel=water_o_selection,
+            cutoff_a=float(cutoff_a),
             time_resolution_ns=float(ps.get("time_resolution_ns", 0.01)),
             tau_max_ns=float(ps.get("tau_max_ns", 5.0)),
             t0_spacing_ns=float(ps.get("t0_spacing_ns", 0.5)),
@@ -312,6 +326,9 @@ def make_regions(top, traj, target_configs, out_dir,
                     os.path.join(per_res_dir, f"summary_{name}.txt"),
                     description=(f"Water shell of {resname} pos {pos} "
                                  f"({len(equiv)} chains combined)."),
+                    static_sel=f"({core})",
+                    mobile_sel=water_o_selection,
+                    cutoff_a=float(cutoff_a),
                     time_resolution_ns=float(prs.get("time_resolution_ns", 0.01)),
                     tau_max_ns=float(prs.get("tau_max_ns", 5.0)),
                     t0_spacing_ns=float(prs.get("t0_spacing_ns", 0.5)),

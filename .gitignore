@@ -1,1 +1,13 @@
 __pycache__/
+*.pyc
+
+# Local-only test/benchmark configs (use machine-specific paths)
+scripts_kinetics/config_benchmark.py
+scripts_kinetics/config_benchmark_solute.py
+
+# HPC scripts contain personal SLURM account / scratch paths
+scripts_hpc/
+
+# Intermediate / output dirs
+_intermediate/
+*.npz.tmp.npz
