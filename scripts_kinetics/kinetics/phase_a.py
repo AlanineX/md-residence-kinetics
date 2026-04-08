@@ -38,12 +38,9 @@ def dispatch_phase_a_subprocess(regions, top_path, traj_path, out_dir,
     # (`python -m kinetics.phase_a_worker`) so it gets the package context
     # and can use relative imports. The PYTHONPATH must include the parent
     # of the kinetics package — set below in _launch_one.
-    package_parent = os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__)))  # = scripts_kinetics/
-    worker_script = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "phase_a_worker.py",
-    )
+    package_dir = os.path.dirname(os.path.abspath(__file__))   # kinetics/
+    package_parent = os.path.dirname(package_dir)              # scripts_kinetics/
+    worker_script = os.path.join(package_dir, "phase_a_worker.py")
     if not os.path.exists(worker_script):
         raise FileNotFoundError(f"phase_a_worker.py not found at {worker_script}")
 

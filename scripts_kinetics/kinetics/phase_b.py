@@ -42,7 +42,7 @@ def compute_sp_for_region(region, out_dir, intermittency, n_procs):
         raise FileNotFoundError(
             f"No Phase A intermediate for {region.name}: {contacts_path}")
 
-    frame_indices, list_of_sets = load_contacts_npz(contacts_path)
+    _, list_of_sets = load_contacts_npz(contacts_path)
     n_frames = len(list_of_sets)
 
     # Optional intermittency correction (matches the old code path).

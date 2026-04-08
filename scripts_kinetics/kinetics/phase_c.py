@@ -18,7 +18,7 @@ def aggregate_sp_for_region(region, out_dir):
         raise FileNotFoundError(
             f"No Phase B intermediate for {region.name}: {sp_origins_path}")
 
-    t0_indices, n0_array, sums_2d, counts_2d = load_sp_origins_npz(sp_origins_path)
+    _, _, sums_2d, counts_2d = load_sp_origins_npz(sp_origins_path)
 
     sums_tot = sums_2d.sum(axis=0)
     counts_tot = counts_2d.sum(axis=0)

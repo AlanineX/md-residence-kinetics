@@ -75,14 +75,21 @@ def main():
 
     static_atoms = u.select_atoms(region.static_sel)
     mobile_atoms = u.select_atoms(region.mobile_sel)
-    if static_atoms.n_atoms == 0:
-        print(f"[worker {region.name}] static selection empty — abort",
-              flush=True)
-        sys.exit(3)
-    if mobile_atoms.n_atoms == 0:
-        print(f"[worker {region.name}] mobile selection empty — abort",
-              flush=True)
-        sys.exit(3)
+    if static_atoms.n_atoms == 0 or mobile_atoms.n_atoms == 0:
+        # Empty selections at the reference frame are valid for dynamic
+        # selections (probes may visit later). For a STATIC selection that
+        # is genuinely empty, the result is just empty contact sets for
+        # every frame — Phase B/C will detect this and skip cleanly.
+        # We save an empty intermediate and exit 0 instead of erroring,
+        # which would otherwise trigger 3 retries × N chunks of wasted
+        # subprocess startups.
+        which = "static" if static_atoms.n_atoms == 0 else "mobile"
+        print(f"[worker {region.name}] {which} selection empty — saving "
+              f"empty contacts for {n_frames_expected} frames", flush=True)
+        empty_frames = list(range(start, stop, stride))
+        empty_sets = [set() for _ in empty_frames]
+        save_contacts_npz(contacts_path, empty_frames, empty_sets)
+        return
 
     mob_resix = np.array([mobile_atoms[i].residue.resindex
                           for i in range(len(mobile_atoms))], dtype=np.int32)

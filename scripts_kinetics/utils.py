@@ -33,15 +33,6 @@ class RegionSpec:
 
 # ── Universe helpers ─────────────────────────────────────────────────────────
 
-def close_universe(u):
-    try:
-        traj = getattr(u, "trajectory", None)
-        if traj is not None:
-            traj.close()
-    except Exception:
-        pass
-
-
 def detect_chain_kw(u):
     try:
         _ = u.residues[0].chainID
@@ -427,7 +418,6 @@ def validate_and_compute_settings(regions, dt_traj_ns, n_frames_total):
     else:
         print("\nAll settings validated successfully.")
     print("=" * 70 + "\n")
-    return warnings_list
 
 
 # ── IO helpers ───────────────────────────────────────────────────────────────
