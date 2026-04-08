@@ -17,11 +17,9 @@ STOP_FRAME  = None   # exclusive; None = end
 
 # ================== ANALYSIS PARAMETERS ==================
 INTERMITTENCY          = 0
-COUNT_STATS_MAX_FRAMES = 500   # 0 = skip count estimation
 FIRST_SHELL_A          = 3.5   # cutoff (angstrom)
 DO_EXP_FIT             = True
 N_PROCS                = 10
-N_BLOCKS               = 1
 WATER_O_SELECTION      = "name OW OH2"
 CALC_PROTEIN_SHELL     = True # False
 KEEP_INTERMEDIATES     = True  # keep _intermediate/contacts and sp_origins after final CSV
@@ -32,7 +30,6 @@ PER_RESIDUE_SETTINGS = {
     "time_resolution_ns": 0.01,
     "tau_max_ns": 5.0,
     "t0_spacing_ns": 0.5,
-    "n_blocks": 1,
 }
 
 # ================== PLOT SETTINGS (after extraction) ==================
@@ -58,7 +55,6 @@ MDA_SETTINGS = {
     "time_resolution_ns": 0.01,
     "tau_max_ns": 5.0,
     "t0_spacing_ns": 0.5,
-    "n_blocks": 1,
 }
 
 # Protein shell water settings
@@ -73,7 +69,6 @@ DDA_SETTINGS = {
     "time_resolution_ns": 0.05,
     "tau_max_ns": 250.0,
     "t0_spacing_ns": 5.0,
-    "n_blocks": 4,
 }
 
 # Water pocket: very fast dynamics (tau ~ 0.01-0.5 ns)
@@ -81,7 +76,6 @@ WATER_POCKET_SETTINGS = {
     "time_resolution_ns": 0.002,
     "tau_max_ns": 2.0,
     "t0_spacing_ns": 0.05,
-    "n_blocks": 10,
 }
 
 # ================== TARGET CONFIGS ==================

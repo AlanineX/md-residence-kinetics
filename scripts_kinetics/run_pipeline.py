@@ -89,7 +89,6 @@ def main():
         cutoff_a=cfg.FIRST_SHELL_A,
         water_o_selection=cfg.WATER_O_SELECTION,
         calc_protein_shell=cfg.CALC_PROTEIN_SHELL,
-        n_blocks_default=cfg.N_BLOCKS,
         protein_shell_settings=getattr(cfg, "PROTEIN_SHELL_SETTINGS", None),
         calc_per_residue_shell=getattr(cfg, "CALC_PER_RESIDUE_SHELL", None),
         per_residue_settings=getattr(cfg, "PER_RESIDUE_SETTINGS", None),
@@ -115,7 +114,7 @@ def main():
     write_run_log(
         regions, cfg.OUT_DIR, cfg.TOP_PATH, cfg.TRAJ_PATH,
         cfg.START_FRAME, cfg.STOP_FRAME, cfg.INTERMITTENCY,
-        cfg.COUNT_STATS_MAX_FRAMES, cfg.FIRST_SHELL_A,
+        cfg.FIRST_SHELL_A,
         cfg.WATER_O_SELECTION, cfg.DO_EXP_FIT, cfg.N_PROCS,
         dt_ns=dt_ns, n_frames=n_frames_total,
     )
@@ -250,8 +249,6 @@ def main():
             "stop_frame": stop,
             "time_taken": phase_a_times.get(region.name, 0.0)
                           + phase_b_times.get(region.name, 0.0),
-            "n_blocks_completed": 1,
-            "n_blocks_total": 1,
         }
 
         # Save SP CSV

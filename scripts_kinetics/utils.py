@@ -22,7 +22,6 @@ class RegionSpec:
     time_resolution_ns: float = 0.01
     tau_max_ns: float = 25.0
     t0_spacing_ns: float = 0.5
-    n_blocks: int = 10
     # Computed (set by validate_and_compute_settings)
     stride: int = 1
     tau_max_frames: int = 0
@@ -176,7 +175,7 @@ def position_in_range(pos, ranges):
 
 def make_regions(top, traj, target_configs, out_dir,
                  cutoff_a=3.5, water_o_selection="name OW OH2",
-                 calc_protein_shell=False, n_blocks_default=10,
+                 calc_protein_shell=False,
                  protein_shell_settings=None,
                  calc_per_residue_shell=None, per_residue_settings=None):
     os.makedirs(out_dir, exist_ok=True)
@@ -254,7 +253,6 @@ def make_regions(top, traj, target_configs, out_dir,
             time_resolution_ns=float(config.get("time_resolution_ns", 0.01)),
             tau_max_ns=float(config.get("tau_max_ns", 25.0)),
             t0_spacing_ns=float(config.get("t0_spacing_ns", 0.5)),
-            n_blocks=int(config.get("n_blocks", n_blocks_default)),
         ))
 
     if calc_protein_shell:
@@ -277,7 +275,6 @@ def make_regions(top, traj, target_configs, out_dir,
             time_resolution_ns=float(ps.get("time_resolution_ns", 0.01)),
             tau_max_ns=float(ps.get("tau_max_ns", 5.0)),
             t0_spacing_ns=float(ps.get("t0_spacing_ns", 0.5)),
-            n_blocks=int(ps.get("n_blocks", n_blocks_default)),
         ))
 
     # Per-residue solvation shell
@@ -332,7 +329,6 @@ def make_regions(top, traj, target_configs, out_dir,
                     time_resolution_ns=float(prs.get("time_resolution_ns", 0.01)),
                     tau_max_ns=float(prs.get("tau_max_ns", 5.0)),
                     t0_spacing_ns=float(prs.get("t0_spacing_ns", 0.5)),
-                    n_blocks=int(prs.get("n_blocks", n_blocks_default)),
                 ))
                 n_added += 1
             print(f"Per-residue solvation: {n_added} positions, "
@@ -381,7 +377,6 @@ def validate_and_compute_settings(regions, dt_traj_ns, n_frames_total):
               f"-> stride = {stride} (actual: {actual_res:.4f} ns)")
         print(f"    tau_max_ns = {region.tau_max_ns} -> tau_max_frames = {tau_max_frames}")
         print(f"    t0_spacing_ns = {region.t0_spacing_ns} -> t0_step = {t0_step}")
-        print(f"    n_blocks = {region.n_blocks}")
         print(f"  Derived:")
         print(f"    Valid origin range: 0 to {valid_origin_range_ns:.1f} ns "
               f"({valid_origin_frames} strided frames)")
@@ -420,14 +415,6 @@ def validate_and_compute_settings(regions, dt_traj_ns, n_frames_total):
             print(f"  {msg}")
             errors_list.append(f"[{region.name}] {msg}")
 
-        origins_per_block = (valid_origin_frames // region.n_blocks
-                             if region.n_blocks > 0 else 0)
-        if origins_per_block < tau_max_frames:
-            msg = (f"WARNING: n_blocks={region.n_blocks} may be too high; "
-                   f"origins_per_block={origins_per_block} < tau_max_frames={tau_max_frames}")
-            print(f"  {msg}")
-            warnings_list.append(f"[{region.name}] {msg}")
-
     print("\n" + "-" * 70)
     if errors_list:
         print("\nERRORS FOUND:")
@@ -457,8 +444,7 @@ def save_sp_csv(tau_ns, S, path):
 
 def write_run_log(regions, out_dir, top_path, traj_path,
                   start_frame, stop_frame, intermittency,
-                  count_stats_max_frames, first_shell_a,
-                  water_o_selection, do_exp_fit, n_procs,
+                  first_shell_a, water_o_selection, do_exp_fit, n_procs,
                   dt_ns=None, n_frames=None):
     log_path = os.path.join(out_dir, "run_settings.log")
     traj_length_ns = n_frames * dt_ns if (n_frames and dt_ns) else None
@@ -477,7 +463,6 @@ def write_run_log(regions, out_dir, top_path, traj_path,
         f"  START_FRAME = {start_frame}",
         f"  STOP_FRAME = {stop_frame}",
         f"  INTERMITTENCY = {intermittency}",
-        f"  COUNT_STATS_MAX_FRAMES = {count_stats_max_frames}",
         f"  FIRST_SHELL_A = {first_shell_a}",
         f"  WATER_O_SELECTION = {water_o_selection}",
         f"  DO_EXP_FIT = {do_exp_fit}",
@@ -492,8 +477,7 @@ def write_run_log(regions, out_dir, top_path, traj_path,
             "  User settings (ns):",
             f"    time_resolution_ns = {r.time_resolution_ns}",
             f"    tau_max_ns = {r.tau_max_ns}",
-            f"    t0_spacing_ns = {r.t0_spacing_ns}",
-            f"    n_blocks = {r.n_blocks}", "",
+            f"    t0_spacing_ns = {r.t0_spacing_ns}", "",
             "  Computed (frames):",
             f"    stride = {r.stride}",
             f"    tau_max_frames = {r.tau_max_frames}",
@@ -534,7 +518,6 @@ def write_summary(region, sp_result, fit1, fit2, out_path, do_exp_fit=True):
         f"  time_resolution_ns = {region.time_resolution_ns}",
         f"  tau_max_ns = {region.tau_max_ns}",
         f"  t0_spacing_ns = {region.t0_spacing_ns}",
-        f"  n_blocks = {region.n_blocks}",
         "",
         "Computed (frames):",
         f"  stride = {stride}",
