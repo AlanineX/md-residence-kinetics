@@ -51,7 +51,13 @@ def save_contacts_npz(path, frame_indices, list_of_sets):
 
 
 def load_contacts_npz(path):
-    """Load contact records back as (frame_indices, list_of_sets)."""
+    """Load contact records back as (frame_indices, list_of_sets).
+
+    WARNING: for large regions (e.g. protein_shell with ~30k contacts per
+    frame × 50k frames), this materialises ~40 GB of Python set objects.
+    Use load_contacts_npz_raw + slice_contacts_to_sets for block-wise
+    processing instead.
+    """
     data = np.load(path)
     frame_indices = data["frame_indices"]
     offsets = data["offsets"]
@@ -61,6 +67,39 @@ def load_contacts_npz(path):
         a, b = int(offsets[i]), int(offsets[i + 1])
         list_of_sets.append(set(flat[a:b].tolist()))
     return frame_indices, list_of_sets
+
+
+def load_contacts_npz_raw(path):
+    """Load raw numpy arrays from a contacts npz WITHOUT converting to sets.
+
+    Returns (frame_indices, offsets, resindices) — compact numpy arrays.
+    For protein_shell with ~30k contacts/frame × 50k frames, the raw
+    arrays are ~6 GB vs ~40 GB for the Python-set representation.
+
+    Use slice_contacts_to_sets() to convert a window of frames to sets
+    for block-wise Phase B processing.
+    """
+    data = np.load(path)
+    return data["frame_indices"], data["offsets"], data["resindices"]
+
+
+def slice_contacts_to_sets(offsets, resindices, start_idx, end_idx):
+    """Convert frames [start_idx, end_idx) from raw arrays to a list of sets.
+
+    Only materialises the sets for the requested window — keeps memory
+    bounded by the window size rather than the full trajectory.
+    """
+    result = []
+    for i in range(start_idx, end_idx):
+        a, b = int(offsets[i]), int(offsets[i + 1])
+        result.append(set(resindices[a:b].tolist()))
+    return result
+
+
+def contacts_npz_frame_count(path):
+    """Return the number of frames in a contacts npz without loading data."""
+    data = np.load(path)
+    return len(data["frame_indices"])
 
 
 # ── SP origins npz ──────────────────────────────────────────────────────────

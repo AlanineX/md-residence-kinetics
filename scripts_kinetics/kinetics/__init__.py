@@ -29,6 +29,9 @@ Public API (imported here for convenience):
 from .io import (
     save_contacts_npz,
     load_contacts_npz,
+    load_contacts_npz_raw,
+    slice_contacts_to_sets,
+    contacts_npz_frame_count,
     save_sp_origins_npz,
     load_sp_origins_npz,
     _contacts_path,
