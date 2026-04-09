@@ -248,20 +248,27 @@ def make_regions(top, traj, target_configs, out_dir,
 
     if calc_protein_shell:
         ps = protein_shell_settings or {}
-        sel_ps = f"byres ({water_o_selection} and around {cutoff_a:.1f} protein)"
+        # mobile_sel defaults to water oxygens but can be overridden
+        # (e.g. "resname ADP" for an ADP-only trajectory)
+        ps_mobile = ps.get("mobile_sel", water_o_selection)
+        sel_ps = f"byres ({ps_mobile} and around {cutoff_a:.1f} protein)"
         sel_atoms = u.select_atoms(sel_ps)
-        print(f"Target protein_shell: Water within cutoff of protein.")
+        print(f"Target protein_shell: {ps_mobile} within cutoff of protein.")
         print(f"Selection for protein_shell: {sel_ps} | "
               f"atoms={sel_atoms.n_atoms}, residues={sel_atoms.residues.n_residues}")
         if sel_atoms.n_atoms == 0:
-            raise ValueError("Selection for protein_shell is empty.")
+            raise ValueError(
+                f"Selection for protein_shell is empty. "
+                f"mobile_sel='{ps_mobile}' matched 0 atoms near protein. "
+                f"Set PROTEIN_SHELL_SETTINGS['mobile_sel'] to the correct "
+                f"probe selection, or set CALC_PROTEIN_SHELL = False.")
         regions.append(RegionSpec(
             "protein_shell", sel_ps,
             os.path.join(out_dir, "sp_protein_shell.csv"),
             os.path.join(out_dir, "summary_protein_shell.txt"),
-            description="Water within cutoff of protein (global shell).",
+            description=f"{ps_mobile} within cutoff of protein (global shell).",
             static_sel="protein",
-            mobile_sel=water_o_selection,
+            mobile_sel=ps_mobile,
             cutoff_a=float(cutoff_a),
             time_resolution_ns=float(ps.get("time_resolution_ns", 0.01)),
             tau_max_ns=float(ps.get("tau_max_ns", 5.0)),
