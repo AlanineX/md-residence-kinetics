@@ -55,6 +55,10 @@ def dispatch_phase_a_subprocess(regions, top_path, traj_path, out_dir,
     if log_dir is None:
         log_dir = os.path.join(out_dir, "_intermediate", "phase_a_logs")
     os.makedirs(log_dir, exist_ok=True)
+    # chunks_dir is shared by all parallel array tasks writing to the same
+    # out_dir. Each region's chunks have unique filenames (region.part_NNN),
+    # so no write collision. But we must NOT rmdir this shared directory —
+    # another task may be writing to it concurrently.
     chunks_dir = os.path.join(out_dir, "_intermediate", "contacts_chunks")
     os.makedirs(chunks_dir, exist_ok=True)
 
@@ -192,7 +196,7 @@ def dispatch_phase_a_subprocess(regions, top_path, traj_path, out_dir,
     total = time.perf_counter() - t0_global
     print(f"[dispatch] Phase A total: {total:.1f}s wall")
 
-    # Cleanup pickles dir
+    # Cleanup pickles (per-task tmpdir — safe to remove)
     for path in region_pickles.values():
         try:
             os.remove(path)
@@ -202,9 +206,8 @@ def dispatch_phase_a_subprocess(regions, top_path, traj_path, out_dir,
         os.rmdir(pickle_dir)
     except Exception:
         pass
-    try:
-        os.rmdir(chunks_dir)
-    except Exception:
-        pass
+    # NOTE: do NOT rmdir chunks_dir — it's shared across parallel array
+    # tasks. Another task may be writing chunk files to it right now.
+    # The directory is harmless to leave around (just empty after merge).
 
     return elapsed_map

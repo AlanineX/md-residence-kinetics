@@ -306,12 +306,19 @@ def main():
 
     print(f"\n[timer] Phase C total: {_elapsed(phase_c_t0)}")
 
-    # Aggregate CSVs
-    if all_fit_results:
+    # Aggregate CSVs — only write if we have a meaningful number of regions.
+    # When running as a single-region SLURM array task, writing a 1-row
+    # aggregate is wasteful and creates a race condition (50 tasks all
+    # overwriting the same CSV). The merge job (merge_results.sh) produces
+    # the authoritative aggregate after all tasks finish.
+    n_total_regions = len(regions_to_process) + len(skipped_regions)
+    if all_fit_results and n_total_regions > 1:
         t0 = time.perf_counter()
         write_aggregate_csvs(all_fit_results, cfg.OUT_DIR,
                              count_data=count_data, model_free_data=mf_data)
         print(f"[timer] Aggregate CSVs in {_elapsed(t0)}")
+    elif all_fit_results:
+        print(f"[skip] Aggregate CSVs skipped (single-region task; merge job will produce them)")
 
     # Optional cleanup of intermediates
     keep_int = getattr(cfg, "KEEP_INTERMEDIATES", True)
