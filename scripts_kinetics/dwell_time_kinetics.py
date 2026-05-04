@@ -212,16 +212,61 @@ def write_per_chain_csv(summary, path):
             w.writerow([ch] + [d.get(k, "") for k in keys[1:]])
 
 
+def _bi_exp_pdf(t, A, tau1, tau2):
+    """Density form: -dS/dt for bi-exp survival."""
+    return A / tau1 * np.exp(-t / tau1) + (1 - A) / tau2 * np.exp(-t / tau2)
+
+
 def make_plot(per_buffer_events, per_buffer_fits, out_png):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.4), sharey=True)
     colors = {"EDDA": "#d95f02", "AMAC": "#1f78b4"}
+    fig, axes = plt.subplots(2, 2, figsize=(12.5, 8.0))
 
-    for ax_i, scale in enumerate(("linear", "log")):
-        ax = axes[ax_i]
+    # Top row: per-buffer dwell-time histogram + bi-exp PDF overlay (log y).
+    for col, buf in enumerate(("EDDA", "AMAC")):
+        ax = axes[0, col]
+        events = per_buffer_events[buf]
+        full = np.array([e["dwell_ns"] for e in events
+                         if not (e["left_cens"] or e["right_cens"])])
+        if len(full) == 0:
+            ax.text(0.5, 0.5, "no events", ha="center", va="center",
+                    transform=ax.transAxes, color=colors[buf])
+            ax.set_xticks([]); ax.set_yticks([])
+            ax.set_title(f"{buf} — N=0")
+            continue
+
+        # log-spaced bins to handle wide dynamic range.
+        tmin = max(DT_NS / 2, full.min() * 0.9)
+        tmax = full.max() * 1.1
+        bins = np.logspace(np.log10(tmin), np.log10(tmax), 30)
+        ax.hist(full, bins=bins, density=True, color=colors[buf],
+                alpha=0.55, edgecolor="white",
+                label=f"empirical PDF  (N={len(full)})")
+
+        fit = per_buffer_fits[buf]
+        if "bi" in fit and "tau_fast" in fit["bi"]:
+            p = fit["bi"]
+            tt = np.logspace(np.log10(tmin), np.log10(tmax), 250)
+            ax.plot(tt, _bi_exp_pdf(tt, p["A"], p["tau_fast"], p["tau_slow"]),
+                    color="black", lw=1.4,
+                    label=(f"bi-exp PDF\n"
+                           f"  A={p['A']:.2f}\n"
+                           f"  τ_fast={p['tau_fast']:.2f} ns\n"
+                           f"  τ_slow={p['tau_slow']:.2f} ns\n"
+                           f"  R²={p['r2']:.3f}"))
+        ax.set_xscale("log"); ax.set_yscale("log")
+        ax.set_xlabel("dwell time τ (ns)")
+        ax.set_ylabel("density  P(τ)")
+        ax.set_title(f"{buf} — dwell-time histogram")
+        ax.legend(fontsize=8, loc="lower left", frameon=False)
+        ax.grid(True, alpha=0.3, which="both")
+
+    # Bottom row: survival S(τ) — linear (left) and log (right), no sharey.
+    for col, scale in enumerate(("linear", "log")):
+        ax = axes[1, col]
         for buf, events in per_buffer_events.items():
             full = np.array([e["dwell_ns"] for e in events
                              if not (e["left_cens"] or e["right_cens"])])
@@ -229,28 +274,28 @@ def make_plot(per_buffer_events, per_buffer_fits, out_png):
                 continue
             tau, s = survival(full)
             ax.step(tau, s, where="post", color=colors[buf],
-                    lw=1.6, alpha=0.85,
-                    label=f"{buf}  (N={len(full)})")
+                    lw=1.6, alpha=0.9, label=f"{buf}  (N={len(full)})")
             fit = per_buffer_fits[buf]
-            if "bi" in fit and "tau_fast" in fit["bi"]:
+            if "tau_fast" in fit.get("bi", {}):
                 p = fit["bi"]
-                tt = np.linspace(0, tau.max(), 200)
+                tt = np.linspace(0, tau.max(), 250)
                 ax.plot(tt, bi_exp(tt, p["A"], p["tau_fast"], p["tau_slow"]),
                         ls="--", color=colors[buf], lw=1.0,
-                        label=(f"{buf} bi-exp:  A={p['A']:.2f},"
-                               f" τ₁={p['tau_fast']:.2f}, τ₂={p['tau_slow']:.1f} ns,"
-                               f" R²={p['r2']:.3f}"))
+                        label=f"{buf} bi-exp fit (R²={p['r2']:.3f})")
         ax.set_xlabel("dwell time τ (ns)")
+        ax.set_xlim(0, 30)         # focus on relevant range
         ax.set_yscale(scale)
-        ax.grid(True, alpha=0.3)
         if scale == "log":
-            ax.set_ylim(1e-2, 1.05)
+            ax.set_ylim(1e-3, 1.05)
+            ax.set_ylabel("S(τ) = P(T > τ)  (log)")
         else:
             ax.set_ylim(0, 1.05)
-            ax.set_ylabel("survival  S(τ) = P(T > τ)")
-        ax.legend(fontsize=7.5, loc="upper right", frameon=False)
-        ax.set_title(f"dwell-time survival ({scale})")
-    fig.suptitle("Single-species dwell kinetics — EDDA vs AMAC")
+            ax.set_ylabel("S(τ) = P(T > τ)")
+        ax.set_title(f"survival ({scale})")
+        ax.legend(fontsize=8.5, loc="upper right", frameon=False)
+        ax.grid(True, alpha=0.3, which="both")
+
+    fig.suptitle("Single-species dwell kinetics — EDDA vs AMAC", y=0.995)
     fig.tight_layout()
     fig.savefig(out_png, dpi=140, facecolor="white")
     plt.close(fig)
