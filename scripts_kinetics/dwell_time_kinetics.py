@@ -795,35 +795,46 @@ def make_plots(per_buffer_data, plot_dir):
         pi, t1, t2 = b_fit["pi"], b_fit["tau_fast"], b_fit["tau_slow"]
         # Plot range: focus on the slow component up to ~3·τ_slow
         t_max = min(max(3 * t2, 5 * t1), float(np.max(full)) * 1.05)
-        t_grid = np.linspace(0, t_max, 400)
 
-        fast_S = pi * np.exp(-t_grid / t1)
-        slow_S = (1 - pi) * np.exp(-t_grid / t2)
+        # Discrete bar positions (matches Method 1's `fit_chain_X.svg` look:
+        # stacked vertical bars at each tau, fit curves overlaid).
+        n_bars = 50
+        t_bars = np.linspace(0, t_max, n_bars + 1)
+        t_centers = 0.5 * (t_bars[:-1] + t_bars[1:])
+        bar_w = (t_bars[1] - t_bars[0]) * 0.95
+
+        fast_S = pi * np.exp(-t_centers / t1)
+        slow_S = (1 - pi) * np.exp(-t_centers / t2)
         total_S = fast_S + slow_S
+
+        # Empirical Kaplan-Meier (computed once, used both for bars and step)
+        t_e, s_e = empirical_survival(full, cens)
 
         fig, ax = plt.subplots(figsize=(8.5, 5.5))
 
-        # Stacked components (slow on bottom, fast on top — mirrors fit_chain_X)
-        ax.fill_between(t_grid, 0, slow_S,
-                        color="#9ecae1", alpha=0.8, label="slow component")
-        ax.fill_between(t_grid, slow_S, total_S,
-                        color="#fdae6b", alpha=0.85, label="fast component")
+        # Stacked bars: slow on bottom, fast on top — analogous to Method 1's
+        # constant + slow + fast stacking, but with no constant term here.
+        ax.bar(t_centers, slow_S, width=bar_w, align="center",
+               color="#9ecae1", edgecolor="white", lw=0.4,
+               label=f"slow component  ((1-π)·e^(-t/τ_slow), 1-π = {1-pi:.3f})")
+        ax.bar(t_centers, fast_S, width=bar_w, align="center", bottom=slow_S,
+               color="#fdae6b", edgecolor="white", lw=0.4,
+               label=f"fast component  (π·e^(-t/τ_fast), π = {pi:.3f})")
 
-        # Bi-exp envelope on top
-        ax.plot(t_grid, total_S, color="#7f0000", lw=1.6, ls="--",
-                label="bi-exp MLE total")
-
-        # Single-exp comparison
+        # Bi-exp envelope and single-exp reference, on top of bars
+        t_grid = np.linspace(0, t_max, 400)
+        ax.plot(t_grid,
+                pi * np.exp(-t_grid / t1) + (1 - pi) * np.exp(-t_grid / t2),
+                color="#7f0000", lw=1.5, ls="--", label="bi-exp MLE total")
         if s_fit is not None:
             ax.plot(t_grid, np.exp(-t_grid / s_fit["tau"]),
-                    color="orange", lw=1.0, ls=":",
+                    color="#cc6600", lw=1.0, ls=":",
                     label=f"single-exp (τ = {s_fit['tau']:.2f} ns)")
 
-        # Empirical Kaplan-Meier
-        t_e, s_e = empirical_survival(full, cens)
+        # Empirical Kaplan-Meier on top
         mask = t_e <= t_max
         ax.step(t_e[mask], s_e[mask], where="post",
-                color="black", lw=1.2, alpha=0.85, label="Kaplan-Meier")
+                color="black", lw=1.4, alpha=0.9, label="Kaplan-Meier (data)")
 
         # Annotations: all key parameters in one text box
         kon_avg = float(np.nanmean(list(data["kon_per_chain"].values())))
