@@ -483,7 +483,7 @@ def fmt_val(v):
     return str(v)
 
 
-def write_csv(rows: list[dict], path: str, cols: list[str]):
+def write_csv(rows, path, cols):
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(cols)
@@ -492,9 +492,8 @@ def write_csv(rows: list[dict], path: str, cols: list[str]):
 
 
 # ── Per-buffer human-readable summary text ─────────────────────────────────
-def write_summary_txt(buf: str, full: np.ndarray, cens: np.ndarray,
-                      s_fit, b_fit, kon_per_chain: dict, arrivals: dict,
-                      out_path: str):
+def write_summary_txt(buf, full, cens, s_fit, b_fit, kon_per_chain, arrivals,
+                      out_path):
     lines = []
     sep = "=" * 60
     lines.append(sep)
@@ -592,8 +591,140 @@ def write_summary_txt(buf: str, full: np.ndarray, cens: np.ndarray,
         f.write("\n".join(lines) + "\n")
 
 
+# ── Consolidated summary.txt (one file, all buffers + comparison) ──────────
+def write_consolidated_summary(per_buffer_data, out_path):
+    """One txt file with everything: per-buffer fit + side-by-side comparison."""
+    lines = []
+    bar = "=" * 70
+    sep = "-" * 70
+
+    lines.append(bar)
+    lines.append("DWELL-TIME KINETICS — CONSOLIDATED SUMMARY")
+    lines.append(bar)
+    lines.append("")
+    lines.append("Inputs (shared):")
+    lines.append(f"  T_total       = {T_TOTAL_NS:.2f} ns")
+    lines.append(f"  dt(analysis)  = {DT_NS:.3f} ns/frame")
+    lines.append(f"  Box           = {BOX_NM} nm cubic  →  V = {V_L*1e21:.2f} × 10⁻²¹ L")
+    lines.append(f"  [ADP]_bulk    = {BULK_M*1000:.2f} mM  ({N_ADP} ADP / box)")
+    lines.append(f"  Intermittency = {INTERMITTENCY} frames")
+    lines.append("")
+
+    # Per-buffer detail
+    for buf in BUFFERS:
+        d = per_buffer_data[buf]
+        full, cens = d["full_all"], d["cens_all"]
+        s, b = d["pooled_single"], d["pooled_bi"]
+        kons = d["kon_per_chain"]; arr = d["arrivals"]
+        kon_avg = float(np.nanmean(list(kons.values())))
+        n_total_arr = sum(arr.values())
+
+        lines.append(sep)
+        lines.append(f"BUFFER  {buf}")
+        lines.append(sep)
+        lines.append(f"  N_events (uncensored)  = {len(full)}")
+        lines.append(f"  N_events (right-cens.) = {len(cens)}")
+        lines.append(f"  N_arrivals (across 7 chains) = {n_total_arr}")
+        lines.append(f"  Mean dwell (uncens) = "
+                     f"{(np.mean(full) if len(full) else float('nan')):.4f} ns")
+        lines.append(f"  Median dwell        = "
+                     f"{(np.median(full) if len(full) else float('nan')):.4f} ns")
+        lines.append("")
+        if s:
+            lines.append(f"  Single-exp MLE   τ = {s['tau']:.4f} ± {s['perr_tau']:.4f} ns"
+                         f"   k_off = {s['k_off']*1e9:.3e} s⁻¹")
+            lines.append(f"                   AIC = {s['AIC']:.2f}    "
+                         f"BIC = {s['BIC']:.2f}    nll = {s['nll']:.2f}")
+        if b:
+            lines.append(f"  Bi-exp MLE      π    = {b['pi']:.4f} ± {b['perr_pi']:.4f}")
+            lines.append(f"                  τ_fast = {b['tau_fast']:.4f} ± "
+                         f"{b['perr_tau_fast']:.4f} ns   "
+                         f"k_off = {b['k_off_fast']*1e9:.3e} s⁻¹")
+            lines.append(f"                  τ_slow = {b['tau_slow']:.4f} ± "
+                         f"{b['perr_tau_slow']:.4f} ns   "
+                         f"k_off = {b['k_off_slow']*1e9:.3e} s⁻¹")
+            lines.append(f"                  ⟨τ⟩(mix) = {b['mean_dwell_ns']:.4f} ns   "
+                         f"t½_slow = {b['t_half_slow']:.3f} ns")
+            lines.append(f"                  AIC = {b['AIC']:.2f}    "
+                         f"BIC = {b['BIC']:.2f}    nll = {b['nll']:.2f}")
+        if s and b:
+            d_aic = s["AIC"] - b["AIC"]
+            verdict = ("bi-exp preferred" if d_aic > 2
+                       else "inconclusive" if d_aic > -2
+                       else "single preferred")
+            lines.append(f"  ΔAIC (single − bi) = {d_aic:.2f}  ({verdict})")
+        lines.append("")
+
+        # k_on per chain table
+        lines.append(f"  k_on per chain  ({buf}):")
+        lines.append("    chain  N_arrivals   k_on (M⁻¹·ns⁻¹)   k_on (M⁻¹·s⁻¹)")
+        for ch in CHAINS:
+            n_arr = arr.get(ch, 0)
+            k = kons.get(ch, float("nan"))
+            lines.append(f"    {ch:5s}  {n_arr:>9d}   "
+                         f"{k:>15.4f}   {k*1e9:>13.3e}")
+        lines.append(f"    ── chain-averaged: k_on = {kon_avg:.4f} M⁻¹·ns⁻¹ "
+                     f"= {kon_avg*1e9:.3e} M⁻¹·s⁻¹")
+        lines.append("")
+
+        if b and kon_avg > 0:
+            kd_fast = b["k_off_fast"] / kon_avg
+            kd_slow = b["k_off_slow"] / kon_avg
+            lines.append(f"  K_d (slow) = {kd_slow*1000:.3f} mM   "
+                         f"K_d (fast) = {kd_fast*1000:.1f} mM")
+        lines.append("")
+
+    # ── Side-by-side comparison ────────────────────────────────────────────
+    lines.append(bar)
+    lines.append("BUFFER COMPARISON")
+    lines.append(bar)
+    bufs = list(BUFFERS)
+    if all(per_buffer_data[b]["pooled_bi"] is not None for b in bufs):
+        a_b, b_b = (per_buffer_data[b]["pooled_bi"] for b in bufs)
+        a_kon, b_kon = (
+            float(np.nanmean(list(per_buffer_data[b]["kon_per_chain"].values())))
+            for b in bufs
+        )
+        a_n = sum(per_buffer_data[bufs[0]]["arrivals"].values())
+        b_n = sum(per_buffer_data[bufs[1]]["arrivals"].values())
+        a_full = len(per_buffer_data[bufs[0]]["full_all"])
+        b_full = len(per_buffer_data[bufs[1]]["full_all"])
+
+        def row(label, a, b, fmt="{:.3f}", unit=""):
+            lines.append(f"  {label:<22s}  {fmt.format(a):>14s}  "
+                         f"{fmt.format(b):>14s}{unit}")
+
+        lines.append(f"  {'quantity':<22s}  {bufs[0]:>14s}  {bufs[1]:>14s}")
+        lines.append(f"  {sep[2:24]:<22s}  {sep[2:18]:>14s}  {sep[2:18]:>14s}")
+        row("N events (uncens)", a_full, b_full, fmt="{:.0f}")
+        row("N arrivals (total)", a_n, b_n, fmt="{:.0f}")
+        row("π (fast amplitude)", a_b["pi"], b_b["pi"])
+        row("τ_fast (ns)", a_b["tau_fast"], b_b["tau_fast"])
+        row("τ_slow (ns)", a_b["tau_slow"], b_b["tau_slow"])
+        row("k_off_fast (s⁻¹)", a_b["k_off_fast"]*1e9, b_b["k_off_fast"]*1e9, fmt="{:.2e}")
+        row("k_off_slow (s⁻¹)", a_b["k_off_slow"]*1e9, b_b["k_off_slow"]*1e9, fmt="{:.2e}")
+        row("k_on (M⁻¹·s⁻¹)", a_kon*1e9, b_kon*1e9, fmt="{:.2e}")
+        row("K_d_slow (mM)", (a_b["k_off_slow"]/a_kon)*1000,
+                              (b_b["k_off_slow"]/b_kon)*1000)
+        row("K_d_fast (mM)", (a_b["k_off_fast"]/a_kon)*1000,
+                              (b_b["k_off_fast"]/b_kon)*1000, fmt="{:.1f}")
+    lines.append("")
+    lines.append(bar)
+    lines.append("Files in this directory:")
+    lines.append("  summary.txt                      — this file")
+    lines.append("  bi_exp_fitting_results.csv       — pooled + per-chain bi-exp")
+    lines.append("  single_exp_fitting_results.csv   — pooled + per-chain single")
+    lines.append("  kon_koff_summary.csv             — per-chain k_on/k_off/K_d")
+    lines.append("  dwell_events_<BUF>.csv           — every binding event raw")
+    lines.append("  plots/fit_<BUF>.png              — survival w/ stacked components")
+    lines.append(bar)
+
+    with open(out_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 # ── k_on / k_off table per chain × buffer ──────────────────────────────────
-def write_kon_koff_summary(per_buffer_data: dict, path: str):
+def write_kon_koff_summary(per_buffer_data, path):
     """Write explicit per-chain k_on, k_off table for both buffers."""
     cols = ["buffer", "chain", "N_events", "N_full", "N_cens", "N_arrivals",
             "k_on_M_ns", "k_on_M_s",
@@ -640,151 +771,95 @@ def write_kon_koff_summary(per_buffer_data: dict, path: str):
     write_csv(rows, path, cols)
 
 
-# ── Plot ───────────────────────────────────────────────────────────────────
-def make_plots(per_buffer_data: dict, plot_dir: str):
+# ── Plot — one figure per buffer, single panel, like Method 1 ──────────────
+def make_plots(per_buffer_data, plot_dir):
+    """One panel per buffer: stacked-component KM survival decomposition.
+
+    Mirrors the residence-time pipeline's `fit_chain_X.svg` style:
+    fast and slow components shown as stacked filled regions, total
+    bi-exp fit as a dark line, empirical Kaplan-Meier overlaid,
+    single-exp shown as dotted reference.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     os.makedirs(plot_dir, exist_ok=True)
-    colors = {"EDDA": "#d95f02", "AMAC": "#1f78b4"}
 
-    # Per-buffer figure with 4 panels.
     for buf, data in per_buffer_data.items():
         full = data["full_all"]; cens = data["cens_all"]
-        s_fit = data["pooled_single"]
-        b_fit = data["pooled_bi"]
-        if len(full) == 0:
+        b_fit = data["pooled_bi"]; s_fit = data["pooled_single"]
+        if len(full) == 0 or b_fit is None:
             continue
-        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-        # Panel A: PDF histogram (log-log) + bi-exp PDF.
-        # Use log-spaced bins for shape, plot density per-decade so heights
-        # are visually comparable and don't run to 1e-50.
-        ax = axes[0, 0]
-        tmin = max(DT_NS, full.min())
-        tmax = full.max() * 1.1
-        bins = np.logspace(np.log10(tmin), np.log10(tmax), 25)
-        counts, edges = np.histogram(full, bins=bins)
-        widths = np.diff(edges)
-        # density = counts / (N * width)  — true PDF; clip empty bins for log y
-        density = counts / (len(full) * widths)
-        density = np.where(counts > 0, density, np.nan)
-        centers = (edges[:-1] * edges[1:]) ** 0.5
-        ax.bar(centers, density, width=widths, align="center",
-               color=colors[buf], alpha=0.55, edgecolor="white",
-               label=f"data PDF  (N={len(full)})")
-        if b_fit:
-            tt = np.logspace(np.log10(tmin), np.log10(tmax), 300)
-            pdf = (b_fit["pi"] / b_fit["tau_fast"] * np.exp(-tt / b_fit["tau_fast"])
-                   + (1 - b_fit["pi"]) / b_fit["tau_slow"] * np.exp(-tt / b_fit["tau_slow"]))
-            ax.plot(tt, pdf, color="black", lw=1.5,
-                    label=(f"bi-exp MLE\n"
-                           f"  π={b_fit['pi']:.3f}±{b_fit['perr_pi']:.3f}\n"
-                           f"  τ_fast={b_fit['tau_fast']:.2f}±{b_fit['perr_tau_fast']:.2f} ns\n"
-                           f"  τ_slow={b_fit['tau_slow']:.2f}±{b_fit['perr_tau_slow']:.2f} ns"))
-        if s_fit:
-            tt = np.logspace(np.log10(tmin), np.log10(tmax), 300)
-            ax.plot(tt, (1 / s_fit["tau"]) * np.exp(-tt / s_fit["tau"]),
-                    "--", color="gray", lw=1.0,
-                    label=f"single-exp MLE\n  τ={s_fit['tau']:.2f}±{s_fit['perr_tau']:.2f} ns")
-        ax.set_xscale("log"); ax.set_yscale("log")
-        # ylim: clip to the lowest non-empty bin so empty cells don't drag axis.
-        valid = density[~np.isnan(density)]
-        if len(valid) > 0:
-            ymin = max(valid.min() * 0.5, 1e-6)
-            ymax = valid.max() * 2.0
-            ax.set_ylim(ymin, ymax)
-        ax.set_xlim(tmin * 0.9, tmax)
-        ax.set_xlabel("dwell τ (ns)"); ax.set_ylabel("density f(τ)")
-        ax.set_title(f"{buf} — dwell PDF (log-log)")
-        ax.legend(fontsize=7.5, frameon=False, loc="lower left")
-        ax.grid(True, alpha=0.3, which="both")
 
-        # Panel B: KM survival + bi-exp + single-exp
-        ax = axes[0, 1]
+        pi, t1, t2 = b_fit["pi"], b_fit["tau_fast"], b_fit["tau_slow"]
+        # Plot range: focus on the slow component up to ~3·τ_slow
+        t_max = min(max(3 * t2, 5 * t1), float(np.max(full)) * 1.05)
+        t_grid = np.linspace(0, t_max, 400)
+
+        fast_S = pi * np.exp(-t_grid / t1)
+        slow_S = (1 - pi) * np.exp(-t_grid / t2)
+        total_S = fast_S + slow_S
+
+        fig, ax = plt.subplots(figsize=(8.5, 5.5))
+
+        # Stacked components (slow on bottom, fast on top — mirrors fit_chain_X)
+        ax.fill_between(t_grid, 0, slow_S,
+                        color="#9ecae1", alpha=0.8, label="slow component")
+        ax.fill_between(t_grid, slow_S, total_S,
+                        color="#fdae6b", alpha=0.85, label="fast component")
+
+        # Bi-exp envelope on top
+        ax.plot(t_grid, total_S, color="#7f0000", lw=1.6, ls="--",
+                label="bi-exp MLE total")
+
+        # Single-exp comparison
+        if s_fit is not None:
+            ax.plot(t_grid, np.exp(-t_grid / s_fit["tau"]),
+                    color="orange", lw=1.0, ls=":",
+                    label=f"single-exp (τ = {s_fit['tau']:.2f} ns)")
+
+        # Empirical Kaplan-Meier
         t_e, s_e = empirical_survival(full, cens)
-        ax.step(t_e, s_e, where="post", color=colors[buf], lw=1.6,
-                label="Kaplan-Meier")
-        if b_fit:
-            tt = np.linspace(0, t_e.max() * 1.05, 300)
-            s_bi = b_fit["pi"] * np.exp(-tt / b_fit["tau_fast"]) + \
-                   (1 - b_fit["pi"]) * np.exp(-tt / b_fit["tau_slow"])
-            ax.plot(tt, s_bi, "k-", lw=1.4, label="bi-exp")
-        if s_fit:
-            tt = np.linspace(0, t_e.max() * 1.05, 300)
-            ax.plot(tt, np.exp(-tt / s_fit["tau"]), "--", color="gray",
-                    lw=1.0, label="single-exp")
-        ax.set_xlabel("τ (ns)"); ax.set_ylabel("S(τ)")
-        ax.set_yscale("log"); ax.set_ylim(1e-3, 1.05)
-        ax.set_title(f"{buf} — survival (log)")
-        ax.legend(fontsize=8, frameon=False)
-        ax.grid(True, alpha=0.3, which="both")
+        mask = t_e <= t_max
+        ax.step(t_e[mask], s_e[mask], where="post",
+                color="black", lw=1.2, alpha=0.85, label="Kaplan-Meier")
 
-        # Panel C: cumulative arrivals (events / time, per chain bars)
-        ax = axes[1, 0]
-        chains = CHAINS
-        n_arrivals = [data["arrivals"].get(ch, 0) for ch in chains]
-        ax.bar(chains, n_arrivals, color=colors[buf], alpha=0.75, edgecolor="white")
-        for i, n in enumerate(n_arrivals):
-            ax.text(i, n + max(n_arrivals) * 0.01, f"{n}", ha="center",
-                    va="bottom", fontsize=8)
-        ax.set_xlabel("chain"); ax.set_ylabel("N_arrivals (500 ns)")
-        ax.set_title(f"{buf} — arrivals per chain")
-        ax.grid(True, alpha=0.3, axis="y")
+        # Annotations: all key parameters in one text box
+        kon_avg = float(np.nanmean(list(data["kon_per_chain"].values())))
+        n_arr = sum(data["arrivals"].values())
+        kd_slow_mM = (b_fit["k_off_slow"] / kon_avg) * 1000 if kon_avg > 0 else float("nan")
+        kd_fast_mM = (b_fit["k_off_fast"] / kon_avg) * 1000 if kon_avg > 0 else float("nan")
+        text = (
+            f"N_events  = {len(full)}  (cens {len(cens)})\n"
+            f"N_arrivals = {n_arr}\n"
+            f"π        = {pi:.3f} ± {b_fit['perr_pi']:.3f}\n"
+            f"τ_fast   = {t1:.3f} ± {b_fit['perr_tau_fast']:.3f} ns\n"
+            f"τ_slow   = {t2:.3f} ± {b_fit['perr_tau_slow']:.3f} ns\n"
+            f"k_off_fast = {b_fit['k_off_fast']*1e9:.2e} s⁻¹\n"
+            f"k_off_slow = {b_fit['k_off_slow']*1e9:.2e} s⁻¹\n"
+            f"k_on (avg) = {kon_avg*1e9:.2e} M⁻¹·s⁻¹\n"
+            f"K_d_slow = {kd_slow_mM:.2f} mM\n"
+            f"K_d_fast = {kd_fast_mM:.1f} mM"
+        )
+        ax.text(0.97, 0.97, text, transform=ax.transAxes,
+                ha="right", va="top", fontsize=8.5, family="monospace",
+                bbox=dict(boxstyle="round", facecolor="white",
+                          edgecolor="0.7", alpha=0.92))
 
-        # Panel D: per-chain k_on bars
-        ax = axes[1, 1]
-        kons = [data["kon_per_chain"].get(ch, np.nan) for ch in chains]
-        ax.bar(chains, kons, color=colors[buf], alpha=0.75, edgecolor="white")
-        ax.set_xlabel("chain"); ax.set_ylabel("k_on  (M⁻¹·ns⁻¹)")
-        ax.set_title(f"{buf} — apparent k_on per chain")
-        ax.grid(True, alpha=0.3, axis="y")
+        ax.set_xlabel("dwell time τ (ns)")
+        ax.set_ylabel("S(τ)  =  P(T > τ)")
+        ax.set_xlim(0, t_max)
+        ax.set_ylim(0, 1.02)
+        ax.set_title(f"Dwell-time kinetics — {buf}")
+        ax.legend(loc="lower left", fontsize=9, frameon=False)
+        ax.grid(True, alpha=0.3)
 
-        fig.suptitle(f"Dwell-time kinetics — {buf}  "
-                     f"(N_full={len(full)}, N_cens={len(cens)})", y=0.995)
         fig.tight_layout()
-        fig.savefig(os.path.join(plot_dir, f"dwell_{buf}.svg"),
-                    facecolor="white")
-        fig.savefig(os.path.join(plot_dir, f"dwell_{buf}.png"),
+        fig.savefig(os.path.join(plot_dir, f"fit_{buf}.svg"), facecolor="white")
+        fig.savefig(os.path.join(plot_dir, f"fit_{buf}.png"),
                     dpi=140, facecolor="white")
         plt.close(fig)
-
-    # Combined figure: overlay of both KM survival + bi-exp fits
-    fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.4))
-    for buf, data in per_buffer_data.items():
-        full = data["full_all"]; cens = data["cens_all"]
-        b_fit = data["pooled_bi"]
-        if len(full) == 0:
-            continue
-        t_e, s_e = empirical_survival(full, cens)
-        for ax, scale in zip(axes, ("linear", "log")):
-            ax.step(t_e, s_e, where="post", color=colors[buf], lw=1.6, alpha=0.9,
-                    label=f"{buf} KM  (N={len(full)})")
-            if b_fit:
-                tt = np.linspace(0, t_e.max() * 1.05, 300)
-                s_bi = b_fit["pi"] * np.exp(-tt / b_fit["tau_fast"]) + \
-                       (1 - b_fit["pi"]) * np.exp(-tt / b_fit["tau_slow"])
-                ax.plot(tt, s_bi, "--", color=colors[buf], lw=1.0,
-                        label=(f"{buf} bi-exp:  π={b_fit['pi']:.2f}, "
-                               f"τ₁={b_fit['tau_fast']:.2f}, "
-                               f"τ₂={b_fit['tau_slow']:.1f} ns"))
-    for ax, scale in zip(axes, ("linear", "log")):
-        ax.set_yscale(scale)
-        ax.set_xlabel("dwell τ (ns)")
-        ax.set_xlim(0, 30)
-        ax.set_ylabel("S(τ)" + (" (log)" if scale == "log" else ""))
-        if scale == "log":
-            ax.set_ylim(1e-3, 1.05)
-        else:
-            ax.set_ylim(0, 1.05)
-        ax.set_title(f"survival ({scale})")
-        ax.legend(fontsize=8, frameon=False, loc="upper right")
-        ax.grid(True, alpha=0.3, which="both")
-    fig.suptitle("Dwell-time kinetics — EDDA vs AMAC")
-    fig.tight_layout()
-    fig.savefig(os.path.join(plot_dir, "dwell_combined.svg"), facecolor="white")
-    fig.savefig(os.path.join(plot_dir, "dwell_combined.png"), dpi=140, facecolor="white")
-    plt.close(fig)
 
 
 # ── Main ───────────────────────────────────────────────────────────────────
@@ -801,9 +876,9 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     os.makedirs(PLOT_DIR, exist_ok=True)
 
-    single_rows: list[dict] = []
-    biexp_rows: list[dict] = []
-    per_buffer_data: dict = {}
+    single_rows = []
+    biexp_rows = []
+    per_buffer_data = {}
 
     for buf in BUFFERS:
         events, arrivals = collect_events(buf)
@@ -816,7 +891,7 @@ def main():
         s_pool, b_pool, s_fit_obj, b_fit_obj = fit_record(buf, "pooled", full_all, cens_all)
         single_rows.append(s_pool); biexp_rows.append(b_pool)
 
-        # Per-chain fits
+        # Per-chain fits — kept for the per-chain CSVs only
         for ch in CHAINS:
             full = by_chain[ch]["full"]; cens = by_chain[ch]["cens"]
             s_row, b_row, _, _ = fit_record(buf, f"chain_{ch}", full, cens)
@@ -832,12 +907,6 @@ def main():
             "pooled_bi": b_fit_obj,
         }
 
-        # Summary text
-        write_summary_txt(buf, full_all, cens_all,
-                          s_fit_obj, b_fit_obj,
-                          kon_per_chain, arrivals,
-                          os.path.join(OUT_DIR, f"summary_{buf}.txt"))
-
     # CSVs
     write_csv(single_rows,
               os.path.join(OUT_DIR, "single_exp_fitting_results.csv"),
@@ -848,7 +917,11 @@ def main():
     write_kon_koff_summary(per_buffer_data,
                            os.path.join(OUT_DIR, "kon_koff_summary.csv"))
 
-    # Plots
+    # ONE consolidated summary (replaces summary_<BUF>.txt files)
+    write_consolidated_summary(per_buffer_data,
+                               os.path.join(OUT_DIR, "summary.txt"))
+
+    # ONE plot per buffer (single panel, stacked components — like Method 1)
     make_plots(per_buffer_data, PLOT_DIR)
 
     # Console summary (compact)

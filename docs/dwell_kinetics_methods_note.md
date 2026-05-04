@@ -263,31 +263,27 @@ $$
 The slow-component $K_d$ is the physically meaningful affinity; the fast
 component is contact-flicker noise from the 3.5 Å cutoff.
 
-### Method 2 plot — actual output (4-panel, EDDA pooled)
+### Method 2 plot — actual output (one panel per buffer, like Method 1)
 
 ![Dwell-time kinetics, EDDA pooled](img/method2_dwell_EDDA.png)
 
-Top-left: dwell-time PDF on log–log axes; the bi-exponential MLE (black)
-is overlaid on the empirical PDF (orange bars). Single-exp (grey dashed)
-visibly fails the slow tail. Top-right: Kaplan–Meier survival on log $y$,
-showing both fits. Bottom-left: arrivals per chain (chain B EDDA = 0).
-Bottom-right: $k_{\mathrm{on}}$ per chain.
-
-### Method 2 — buffer comparison
-
-![Combined survival, EDDA vs AMAC](img/method2_dwell_combined.png)
-
-EDDA carries 2.7× more events (orange, $N$ = 1857) than AMAC (blue, $N$ = 680).
-Both bi-exp fits agree well in the bulk; the EDDA tail extends further
-($\tau_{\text{slow}} = 16.5$ ns) than AMAC ($\tau_{\text{slow}} = 8.0$ ns).
+Stacked KM-style decomposition: blue = slow component
+$(1-\pi) e^{-\tau/\tau_{\text{slow}}}$, orange = fast component
+$\pi e^{-\tau/\tau_{\text{fast}}}$, black step = empirical Kaplan–Meier
+survival, dark-red dashed = bi-exp total, orange dotted = single-exp
+reference. Annotation box gives all parameters with SEs plus
+$k_{\mathrm{on}}$ and $K_d$. AMAC has its own panel `fit_AMAC.png` with
+identical layout.
 
 ### Method 2 — full output files
 
 ```
 results_v3/dwell_kinetics/
-  dwell_events_<BUF>.csv           — every event:
-      chain, adp_resid, t_start_ns, dwell_ns, left_cens, right_cens
-  bi_exp_fitting_results.csv       — one row per (buffer × scope), columns:
+  summary.txt                      — ONE consolidated summary:
+                                     inputs, per-buffer fits, ΔAIC/ΔBIC,
+                                     per-chain k_on, K_d, side-by-side
+                                     EDDA vs AMAC table
+  bi_exp_fitting_results.csv       — pooled + per-chain bi-exp:
       buffer, scope, n_full, n_cens, n_total,
       alpha_fast, tau_fast, perr_tau_fast,
       alpha_slow, tau_slow, perr_tau_slow, perr_pi,
@@ -295,43 +291,56 @@ results_v3/dwell_kinetics/
       t_half_fast, t_half_slow,
       S_1ns, S_2ns, S_5ns, RMST_1ns, RMST_2ns, RMST_5ns,
       R2_KM, AIC, AICc, BIC, nll
-  single_exp_fitting_results.csv   — same shape with τ
+  single_exp_fitting_results.csv   — same shape with τ only
   kon_koff_summary.csv             — explicit per-chain table:
       buffer, chain, N_events, N_full, N_cens, N_arrivals,
       k_on_M_ns, k_on_M_s,
       k_off_single, k_off_fast, k_off_slow, k_off_mean,
       tau_single, tau_fast, tau_slow,
       K_d_slow_mM, K_d_fast_mM
-  summary_<BUF>.txt                — human-readable per-buffer summary
-                                     (Inputs, event counts, both fits,
-                                      ΔAIC/ΔBIC, k_on per chain, K_d)
-  plots/dwell_<BUF>.{svg,png}      — 4-panel figure shown above
-  plots/dwell_combined.{svg,png}   — overlay survival comparison
+  dwell_events_<BUF>.csv           — every event raw:
+      chain, adp_resid, t_start_ns, dwell_ns, left_cens, right_cens
+  plots/fit_<BUF>.{svg,png}        — single-panel figure shown above
 ```
 
-### Excerpt: `summary_EDDA.txt` (verbatim)
+### Excerpt: `summary.txt` (verbatim, EDDA section)
 
 ```
-Single-exp MLE  f(t) = (1/τ) exp(-t/τ):
-  τ      = 1.8318 ns ± 0.0425
-  k_off  = 1/τ = 0.5459 ns⁻¹  = 5.459e+08 s⁻¹
-  −logL  = 2981.0117
-  AIC    = 5964.02    AICc = 5964.03    BIC = 5969.55
+BUFFER  EDDA
+----------------------------------------------------------------------
+  N_events (uncensored)  = 1857
+  N_events (right-cens.) = 8
+  N_arrivals (across 7 chains) = 1865
+  Mean dwell (uncens) = 1.2715 ns
+  Median dwell        = 0.2000 ns
 
-Bi-exp MLE  f(t) = (π/τ₁) exp(-t/τ₁) + ((1-π)/τ₂) exp(-t/τ₂):
-  π       = 0.9034 ± 0.0083
-  τ_fast  = 0.3109 ns ± 0.0104
-  τ_slow  = 16.4814 ns ± 1.4582
-  k_off_fast = 1/τ_fast = 3.2166 ns⁻¹  = 3.217e+09 s⁻¹
-  k_off_slow = 1/τ_slow = 0.0607 ns⁻¹  = 6.067e+07 s⁻¹
-  ⟨τ⟩ (mixture) = π·τ_fast + (1-π)·τ_slow = 1.8730 ns
-  t½_fast = 0.2155 ns,  t½_slow = 11.4240 ns
-  −logL = 849.0157
-  AIC = 1704.03    AICc = 1704.04    BIC = 1720.62
+  Single-exp MLE   τ = 1.8318 ± 0.0425 ns   k_off = 5.459e+08 s⁻¹
+                   AIC = 5964.02    BIC = 5969.55    nll = 2981.01
+  Bi-exp MLE      π    = 0.9034 ± 0.0083
+                  τ_fast = 0.3109 ± 0.0104 ns   k_off = 3.217e+09 s⁻¹
+                  τ_slow = 16.4814 ± 1.4582 ns   k_off = 6.067e+07 s⁻¹
+                  ⟨τ⟩(mix) = 1.8730 ns   t½_slow = 11.424 ns
+                  AIC = 1704.03    BIC = 1720.62    nll = 849.02
+  ΔAIC (single − bi) = 4259.99  (bi-exp preferred)
 
-Model selection (single vs bi-exp):
-  ΔAIC = AIC_single − AIC_bi = 4259.99  (bi-exp preferred)
-  ΔBIC = BIC_single − BIC_bi = 4248.93  (bi-exp preferred)
+  K_d (slow) = 8.141 mM   K_d (fast) = 431.6 mM
+```
+
+### Side-by-side comparison (also in `summary.txt`)
+
+```
+  quantity                          EDDA            AMAC
+  ----------------------  ----------------  ----------------
+  N events (uncens)                 1857             680
+  N arrivals (total)                1865             681
+  π (fast amplitude)               0.903           0.880
+  τ_fast (ns)                      0.311           0.218
+  τ_slow (ns)                     16.481           7.956
+  k_off_fast (s⁻¹)              3.22e+09        4.59e+09
+  k_off_slow (s⁻¹)              6.07e+07        1.26e+08
+  k_on (M⁻¹·s⁻¹)                7.45e+09        2.72e+09
+  K_d_slow (mM)                    8.141          46.185
+  K_d_fast (mM)                    431.6          1687.3
 ```
 
 ### Why this is **event-weighted**
