@@ -70,7 +70,11 @@ def main():
 
     print(f"[worker {region.name}] loading universe...", flush=True)
     t0 = time.perf_counter()
-    u = mda.Universe(top_path, traj_path, refresh_offsets=True, to_guess=())
+    # refresh_offsets=False reuses the cached .offsets.npz that the
+    # parent process built; saves ~10-30s per subprocess on a 50001-frame
+    # trajectory. to_guess=() skips mass/charge guessing.
+    u = mda.Universe(top_path, traj_path,
+                     refresh_offsets=False, to_guess=())
     t_load = time.perf_counter() - t0
 
     static_atoms = u.select_atoms(region.static_sel)
@@ -91,8 +95,9 @@ def main():
         save_contacts_npz(contacts_path, empty_frames, empty_sets)
         return
 
-    mob_resix = np.array([mobile_atoms[i].residue.resindex
-                          for i in range(len(mobile_atoms))], dtype=np.int32)
+    # Direct numpy attribute access — replaces the older list comprehension
+    # that walked Python-level Atom objects (O(N) Python iteration).
+    mob_resix = np.asarray(mobile_atoms.resindices, dtype=np.int32)
     cutoff = float(region.cutoff_a)
 
     print(f"[worker {region.name}] universe in {t_load:.1f}s, "

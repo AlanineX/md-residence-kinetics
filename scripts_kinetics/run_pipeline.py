@@ -33,6 +33,7 @@ try:
         _contacts_path,
         _sp_origins_path,
     )
+    from .kinetics.phase_a import dispatch_phase_a_multi
     from .fitting import fit_single_exp, fit_bi_exp, model_free_metrics
     from .plotting import plot_sp_and_fits
     from .utils import (
@@ -49,6 +50,7 @@ except ImportError:
         _contacts_path,
         _sp_origins_path,
     )
+    from kinetics.phase_a import dispatch_phase_a_multi
     from fitting import fit_single_exp, fit_bi_exp, model_free_metrics
     from plotting import plot_sp_and_fits
     from utils import (
@@ -161,10 +163,33 @@ def main():
         needs_phase_a.append(region)
 
     if needs_phase_a:
-        phase_a_times = dispatch_phase_a_subprocess(
-            needs_phase_a, cfg.TOP_PATH, cfg.TRAJ_PATH, cfg.OUT_DIR,
-            start, stop, cfg.N_PROCS,
-        )
+        # Group by stride: regions sharing a stride can use the multi-region
+        # single-pass dispatcher (one trajectory scan per chunk for ALL
+        # regions in the group). Different strides need separate passes.
+        from collections import defaultdict
+        by_stride = defaultdict(list)
+        for r in needs_phase_a:
+            by_stride[r.stride].append(r)
+
+        phase_a_times = {}
+        # Use the multi-pass dispatcher when ≥ 2 regions share a stride;
+        # fall back to the single-region dispatcher otherwise (e.g., for
+        # protein_shell when run alone).
+        for stride, group in by_stride.items():
+            if len(group) >= 2:
+                print(f"[Phase A] {len(group)} regions @ stride={stride} "
+                      f"→ single-pass multi-region dispatcher")
+                phase_a_times.update(dispatch_phase_a_multi(
+                    group, cfg.TOP_PATH, cfg.TRAJ_PATH, cfg.OUT_DIR,
+                    start, stop, cfg.N_PROCS,
+                ))
+            else:
+                print(f"[Phase A] {len(group)} region @ stride={stride} "
+                      f"→ single-region dispatcher")
+                phase_a_times.update(dispatch_phase_a_subprocess(
+                    group, cfg.TOP_PATH, cfg.TRAJ_PATH, cfg.OUT_DIR,
+                    start, stop, cfg.N_PROCS,
+                ))
     else:
         phase_a_times = {}
 
