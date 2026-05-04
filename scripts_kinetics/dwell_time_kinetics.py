@@ -810,63 +810,88 @@ def make_plots(per_buffer_data, plot_dir):
         # Empirical Kaplan-Meier (computed once, used both for bars and step)
         t_e, s_e = empirical_survival(full, cens)
 
-        fig, ax = plt.subplots(figsize=(8.5, 5.5))
+        fig, ax = plt.subplots(figsize=(11.5, 5.5))
 
         # Stacked bars: slow on bottom, fast on top — analogous to Method 1's
         # constant + slow + fast stacking, but with no constant term here.
         ax.bar(t_centers, slow_S, width=bar_w, align="center",
                color="#9ecae1", edgecolor="white", lw=0.4,
-               label=f"slow component  ((1-π)·e^(-t/τ_slow), 1-π = {1-pi:.3f})")
+               label=r"slow component   $(1{-}\pi)\,e^{-\tau/\tau_{\mathrm{slow}}}$")
         ax.bar(t_centers, fast_S, width=bar_w, align="center", bottom=slow_S,
                color="#fdae6b", edgecolor="white", lw=0.4,
-               label=f"fast component  (π·e^(-t/τ_fast), π = {pi:.3f})")
+               label=r"fast component   $\pi\,e^{-\tau/\tau_{\mathrm{fast}}}$")
 
         # Bi-exp envelope and single-exp reference, on top of bars
         t_grid = np.linspace(0, t_max, 400)
         ax.plot(t_grid,
                 pi * np.exp(-t_grid / t1) + (1 - pi) * np.exp(-t_grid / t2),
-                color="#7f0000", lw=1.5, ls="--", label="bi-exp MLE total")
+                color="#7f0000", lw=1.6, ls="--",
+                label="bi-exp MLE fit (total)")
         if s_fit is not None:
             ax.plot(t_grid, np.exp(-t_grid / s_fit["tau"]),
-                    color="#cc6600", lw=1.0, ls=":",
-                    label=f"single-exp (τ = {s_fit['tau']:.2f} ns)")
+                    color="#cc6600", lw=1.1, ls=":",
+                    label="single-exp MLE fit")
 
         # Empirical Kaplan-Meier on top
         mask = t_e <= t_max
         ax.step(t_e[mask], s_e[mask], where="post",
-                color="black", lw=1.4, alpha=0.9, label="Kaplan-Meier (data)")
+                color="black", lw=1.5, alpha=0.9, label="Kaplan-Meier (data)")
 
-        # Annotations: all key parameters in one text box
+        ax.set_xlabel(r"dwell time  $\tau$ (ns)")
+        ax.set_ylabel(r"$S(\tau) = P(T > \tau)$")
+        ax.set_xlim(0, t_max)
+        ax.set_ylim(0, 1.02)
+        ax.grid(True, alpha=0.3)
+
+        # Single ordered legend, top-right of plot.
+        # Order: data, fit (total), components, single-exp.
+        handles, labels = ax.get_legend_handles_labels()
+        # Reorder so KM is first (it's the "data"), then fits, then components.
+        order = [
+            labels.index("Kaplan-Meier (data)"),
+            labels.index("bi-exp MLE fit (total)"),
+            labels.index("single-exp MLE fit"),
+            [i for i, l in enumerate(labels) if l.startswith("fast")][0],
+            [i for i, l in enumerate(labels) if l.startswith("slow")][0],
+        ]
+        ax.legend([handles[i] for i in order], [labels[i] for i in order],
+                  loc="upper right", fontsize=9, frameon=True,
+                  framealpha=0.95, edgecolor="0.7")
+
+        # Parameter table in a separate axes pane on the RIGHT (no overlap
+        # with bars, no overlap with legend).
         kon_avg = float(np.nanmean(list(data["kon_per_chain"].values())))
         n_arr = sum(data["arrivals"].values())
         kd_slow_mM = (b_fit["k_off_slow"] / kon_avg) * 1000 if kon_avg > 0 else float("nan")
         kd_fast_mM = (b_fit["k_off_fast"] / kon_avg) * 1000 if kon_avg > 0 else float("nan")
-        text = (
-            f"N_events  = {len(full)}  (cens {len(cens)})\n"
-            f"N_arrivals = {n_arr}\n"
-            f"π        = {pi:.3f} ± {b_fit['perr_pi']:.3f}\n"
-            f"τ_fast   = {t1:.3f} ± {b_fit['perr_tau_fast']:.3f} ns\n"
-            f"τ_slow   = {t2:.3f} ± {b_fit['perr_tau_slow']:.3f} ns\n"
-            f"k_off_fast = {b_fit['k_off_fast']*1e9:.2e} s⁻¹\n"
-            f"k_off_slow = {b_fit['k_off_slow']*1e9:.2e} s⁻¹\n"
-            f"k_on (avg) = {kon_avg*1e9:.2e} M⁻¹·s⁻¹\n"
-            f"K_d_slow = {kd_slow_mM:.2f} mM\n"
-            f"K_d_fast = {kd_fast_mM:.1f} mM"
-        )
-        ax.text(0.97, 0.97, text, transform=ax.transAxes,
-                ha="right", va="top", fontsize=8.5, family="monospace",
-                bbox=dict(boxstyle="round", facecolor="white",
-                          edgecolor="0.7", alpha=0.92))
+        param_text = "\n".join([
+            "Bi-exp MLE fit",
+            f"  π        = {pi:.3f} ± {b_fit['perr_pi']:.3f}",
+            f"  τ_fast   = {t1:.3f} ± {b_fit['perr_tau_fast']:.3f} ns",
+            f"  τ_slow   = {t2:.3f} ± {b_fit['perr_tau_slow']:.3f} ns",
+            "",
+            "Rates",
+            f"  k_off,fast = {b_fit['k_off_fast']*1e9:.2e} s⁻¹",
+            f"  k_off,slow = {b_fit['k_off_slow']*1e9:.2e} s⁻¹",
+            f"  k_on (avg) = {kon_avg*1e9:.2e} M⁻¹·s⁻¹",
+            "",
+            "Affinity",
+            f"  K_d,slow = {kd_slow_mM:.2f} mM",
+            f"  K_d,fast = {kd_fast_mM:.1f} mM",
+            "",
+            "Statistics",
+            f"  N events     = {len(full)}",
+            f"  N right-cens = {len(cens)}",
+            f"  N arrivals   = {n_arr}",
+        ])
+        # Use a side panel via subplots_adjust + figure-level text.
+        ax.set_title(f"Dwell-time kinetics — {buf}", pad=10)
+        fig.text(0.78, 0.50, param_text, ha="left", va="center",
+                 fontsize=8.5, family="monospace",
+                 bbox=dict(boxstyle="round,pad=0.6", facecolor="white",
+                           edgecolor="0.7", alpha=0.97))
 
-        ax.set_xlabel("dwell time τ (ns)")
-        ax.set_ylabel("S(τ)  =  P(T > τ)")
-        ax.set_xlim(0, t_max)
-        ax.set_ylim(0, 1.02)
-        ax.set_title(f"Dwell-time kinetics — {buf}")
-        ax.legend(loc="lower left", fontsize=9, frameon=False)
-        ax.grid(True, alpha=0.3)
-
-        fig.tight_layout()
+        fig.tight_layout(rect=(0.0, 0.0, 0.76, 1.0))
         fig.savefig(os.path.join(plot_dir, f"fit_{buf}.svg"), facecolor="white")
         fig.savefig(os.path.join(plot_dir, f"fit_{buf}.png"),
                     dpi=140, facecolor="white")
