@@ -203,7 +203,12 @@ def main():
             data = np.loadtxt(region.csv_path, delimiter=",", skiprows=1)
             t_arr, S_arr = data[:, 0], data[:, 1]
             fit1 = fit_single_exp(t_arr, S_arr) if cfg.DO_EXP_FIT else None
-            fit2 = fit_bi_exp(t_arr, S_arr) if cfg.DO_EXP_FIT else None
+            fit2 = fit_bi_exp(
+                t_arr, S_arr,
+                tau_floor=getattr(cfg, "BI_EXP_TAU_FLOOR", None),
+                tau_ceil=getattr(cfg, "BI_EXP_TAU_CEIL", None),
+                reject_degenerate=getattr(cfg, "BI_EXP_REJECT_DEGENERATE", False),
+            ) if cfg.DO_EXP_FIT else None
             mf = model_free_metrics(t_arr, S_arr)
             mf_data[region.name] = mf
             c_est = float(S_arr[-1]) if S_arr.size else 0.0
@@ -259,7 +264,12 @@ def main():
         fit1 = fit2 = None
         if cfg.DO_EXP_FIT:
             fit1 = fit_single_exp(tau_ns, S)
-            fit2 = fit_bi_exp(tau_ns, S)
+            fit2 = fit_bi_exp(
+                tau_ns, S,
+                tau_floor=getattr(cfg, "BI_EXP_TAU_FLOOR", None),
+                tau_ceil=getattr(cfg, "BI_EXP_TAU_CEIL", None),
+                reject_degenerate=getattr(cfg, "BI_EXP_REJECT_DEGENERATE", False),
+            )
             if fit1 is not None:
                 print(f"  1-exp: tau={fit1['tau']:.4f} ns, c={fit1['c']:.4f}, "
                       f"R2={fit1['r_squared']:.4f}")
@@ -287,6 +297,7 @@ def main():
                 x_max_plot=cfg.PLOT_X_MAX,
                 n_bins=cfg.PLOT_N_BINS,
                 bin_spacing_factor=cfg.PLOT_BIN_SPACING,
+                species_label=getattr(cfg, "PLOT_SPECIES_LABEL", None),
             )
             print(f"  [timer] Plotting in {_elapsed(t0)}")
 

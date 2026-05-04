@@ -165,25 +165,48 @@ def fit_single_exp(t, y):
     }
 
 
-def fit_bi_exp(t, y):
+def fit_bi_exp(t, y, tau_floor=None, tau_ceil=None, reject_degenerate=False):
     """Fit P(t) = alpha1*exp(-t/tau1) + alpha2*exp(-t/tau2) + c  (alpha1+alpha2+c=1).
 
     Parameterised as (u, c, tau1, tau2) where alpha1=u*(1-c), alpha2=(1-u)*(1-c).
-    Returns dict with raw params [u, c, tau1, tau2], all derived metrics, or None.
+    The constant term `c` represents the immobilized fraction (probes still
+    bound at t → ∞). Returns dict with raw params + derived metrics, or None.
+
+    Parameters
+    ----------
+    tau_floor : float, optional
+        Minimum allowed value for τ₁ and τ₂. Default 1e-12 (legacy).
+    tau_ceil : float, optional
+        Maximum allowed value for τ₁ and τ₂. Default None (= ∞, legacy).
+        Pass `tau_max_ns` to prevent the fitter from running τ off into
+        absurd values when the SP curve has slow / unresolved tail —
+        which would otherwise be better captured by `c` (the immobilized
+        fraction term).
+    reject_degenerate : bool, optional
+        If True, return None when the fit is degenerate:
+          (a) τ₁ or τ₂ ≤ floor   (collapse to δ-spike)
+          (b) τ₁ or τ₂ ≥ ceil/2  (runaway tail; should go into c)
+          (c) one component amplitude < 1 % (single-exp is more honest)
     """
     n = len(t)
     if n < 4:
         return None
 
     dt = (t[1] - t[0]) if n > 1 else 0.01
+    floor = float(tau_floor) if tau_floor is not None else 1e-12
+    ceil_v = float(tau_ceil) if tau_ceil is not None else np.inf
     c0 = max(0.0, min(float(y[-1]), 1.0))
     tau0 = max(np.trapezoid(y, t), dt)
+    # Initial guesses must lie inside [floor, ceil]
+    p0_t1 = min(max(tau0 / 3.0, floor * 10), ceil_v * 0.5) if np.isfinite(ceil_v) else max(tau0 / 3.0, floor * 10)
+    p0_t2 = min(max(tau0 * 2.0, floor * 10), ceil_v * 0.5) if np.isfinite(ceil_v) else max(tau0 * 2.0, floor * 10)
 
     try:
         popt, pcov = optimize.curve_fit(
             f2_constrained, t, y,
-            p0=(0.5, c0, max(tau0 / 3.0, 1e-6), max(tau0 * 2.0, 1e-6)),
-            bounds=([0.0, 0.0, 1e-12, 1e-12], [1.0, 1.0, np.inf, np.inf]),
+            p0=(0.5, c0, p0_t1, p0_t2),
+            bounds=([0.0, 0.0, floor, floor],
+                    [1.0, 1.0, ceil_v, ceil_v]),
             maxfev=50000,
         )
     except Exception:
@@ -192,6 +215,23 @@ def fit_bi_exp(t, y):
     u_val, c, tau1, tau2 = popt
     alpha1 = u_val * (1.0 - c)
     alpha2 = (1.0 - u_val) * (1.0 - c)
+
+    if reject_degenerate:
+        # (a) τ collapsed to the floor → fit is bi-exp in name only
+        eps_lo = floor * 2.0
+        if tau1 < eps_lo or tau2 < eps_lo:
+            return None
+        # (b) τ ran away to the ceiling → tail belongs in `c`, not τ.
+        # Use a 0.9× threshold (was 0.5×) so we only reject fits that
+        # parked at the boundary; legitimate slow components (e.g.
+        # τ ~ 0.7 × tau_max) remain accepted.
+        if np.isfinite(ceil_v):
+            eps_hi = ceil_v * 0.9
+            if tau1 > eps_hi or tau2 > eps_hi:
+                return None
+        # (c) one component is effectively zero amplitude
+        if alpha1 < 0.01 or alpha2 < 0.01:
+            return None
     yhat = f2_constrained(t, *popt)
     rss_val = float(np.sum((y - yhat) ** 2))
     perr = np.sqrt(np.diag(pcov))

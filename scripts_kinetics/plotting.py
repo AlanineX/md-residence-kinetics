@@ -14,10 +14,21 @@ except ImportError:
 
 def plot_sp_and_fits(tau, S, fit1, fit2, name, outdir, dpi=150, alpha=0.65,
                      x_max_plot=0.5, n_bins=20, bin_spacing_factor=0.8,
-                     base_fontsize=16):
+                     base_fontsize=16, species_label=None):
     """Plot SP histogram with stacked component bars and fitted curves.
 
     Saves: fit_{name}.svg (main plot) and fit_{name}_equations.svg (legend).
+
+    Parameters
+    ----------
+    species_label : str, optional
+        Override for the legend labels (B3 in self-audit). The original
+        labels assumed water-shell residence ("Slow water component"
+        etc.); for ADP/DDA/MDA/NH4 analyses pass e.g. "ADP" so the
+        legend reads "Slow ADP component". Pass "" for fully generic
+        ("Slow component"). Defaults to None → keeps the legacy
+        "water" labels for backward compatibility with existing v3
+        plots.
     """
     os.makedirs(outdir, exist_ok=True)
     plt.rc("font", family="Liberation Sans", size=base_fontsize)
@@ -62,15 +73,28 @@ def plot_sp_and_fits(tau, S, fit1, fit2, name, outdir, dpi=150, alpha=0.65,
         p2_vals = a2 * np.exp(-bin_centers / t2)
         pc_vals = np.full_like(bin_centers, c)
 
+        if species_label is None:
+            const_lbl = "Structural water"
+            slow_lbl  = "Slow water component"
+            fast_lbl  = "Fast water component"
+        elif species_label == "":
+            const_lbl = "Constant component"
+            slow_lbl  = "Slow component"
+            fast_lbl  = "Fast component"
+        else:
+            const_lbl = f"Constant {species_label} component"
+            slow_lbl  = f"Slow {species_label} component"
+            fast_lbl  = f"Fast {species_label} component"
+
         ax.bar(bin_centers, pc_vals, width=width,
                color="lightgray", alpha=0.6, edgecolor="none",
-               label="Structural water")
+               label=const_lbl)
         ax.bar(bin_centers, p2_vals, width=width, bottom=pc_vals,
                color="skyblue", alpha=0.6, edgecolor="none",
-               label="Slow water component")
+               label=slow_lbl)
         ax.bar(bin_centers, p1_vals, width=width, bottom=pc_vals + p2_vals,
                color="coral", alpha=0.6, edgecolor="none",
-               label="Fast water component")
+               label=fast_lbl)
 
     # Smooth fitted curves
     tau_smooth = np.linspace(0, x_max_plot, 1000)
@@ -108,12 +132,13 @@ def plot_sp_and_fits(tau, S, fit1, fit2, name, outdir, dpi=150, alpha=0.65,
     leg1_h.append(mpatches.Patch(facecolor="white", edgecolor="black"))
     leg1_l.append(label_text)
     if fit2 is not None:
+        # Mirror the labels chosen above for the bar fills
         leg1_h.append(mpatches.Patch(color="coral"))
-        leg1_l.append("Fast component")
+        leg1_l.append(fast_lbl)
         leg1_h.append(mpatches.Patch(color="skyblue"))
-        leg1_l.append("Slow component")
+        leg1_l.append(slow_lbl)
         leg1_h.append(mpatches.Patch(color="lightgray"))
-        leg1_l.append("Constant component")
+        leg1_l.append(const_lbl)
 
     legend1 = ax.legend(leg1_h, leg1_l, loc="upper right",
                         bbox_to_anchor=(0.98, 1.0),
