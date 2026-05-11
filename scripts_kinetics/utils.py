@@ -230,7 +230,13 @@ def make_regions(top, traj, target_configs, out_dir,
         # mobile_sel defaults to water oxygens but can be overridden
         # (e.g. "resname ADP" for an ADP-only trajectory)
         ps_mobile = ps.get("mobile_sel", water_o_selection)
-        sel_ps = f"byres ({ps_mobile} and around {cutoff_a:.1f} protein)"
+        # Exclude mobile from the static "protein" set so a cosolute whose
+        # resname is in MDAnalysis's protein-keyword list (e.g. CHARMM "ACE"
+        # = acetyl N-terminus cap, AMBER's NMA, etc.) doesn't count its own
+        # neighbors as protein contacts. For mobile_sels that don't match
+        # the protein keyword this is a no-op.
+        ps_static = ps.get("static_sel", f"(protein and not ({ps_mobile}))")
+        sel_ps = f"byres ({ps_mobile} and around {cutoff_a:.1f} ({ps_static}))"
         sel_atoms = u.select_atoms(sel_ps)
         print(f"Target protein_shell: {ps_mobile} within cutoff of protein.")
         print(f"Selection for protein_shell: {sel_ps} | "
@@ -256,7 +262,7 @@ def make_regions(top, traj, target_configs, out_dir,
             os.path.join(out_dir, "sp_protein_shell.csv"),
             os.path.join(out_dir, "summary_protein_shell.txt"),
             description=f"{ps_mobile} within cutoff of protein (global shell).",
-            static_sel="protein",
+            static_sel=ps_static,
             mobile_sel=ps_mobile,
             cutoff_a=float(cutoff_a),
             time_resolution_ns=float(ps.get("time_resolution_ns", 0.01)),
