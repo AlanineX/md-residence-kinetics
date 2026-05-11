@@ -4,31 +4,10 @@ import os
 import csv
 import numpy as np
 import MDAnalysis as mda
-from dataclasses import dataclass
 
-
-@dataclass
-class RegionSpec:
-    name: str
-    selection: str
-    csv_path: str
-    txt_path: str
-    description: str = ""
-    # Decomposed selection for new pipeline (capped_distance based)
-    static_sel: str = ""    # protein region of interest
-    mobile_sel: str = ""    # the molecule whose residence is tracked (water/solute)
-    cutoff_a: float = 3.5
-    # User settings (ns)
-    time_resolution_ns: float = 0.01
-    tau_max_ns: float = 25.0
-    t0_spacing_ns: float = 0.5
-    # Computed (set by validate_and_compute_settings)
-    stride: int = 1
-    tau_max_frames: int = 0
-    t0_step: int = 1
-    actual_resolution_ns: float = 0.0
-    n_origins_estimated: int = 0
-    valid_origin_range_ns: float = 0.0
+# Canonical RegionSpec lives in kinetics.region (MDA-free).
+from kinetics.region import RegionSpec  # re-export for backwards compat
+__all__ = ["RegionSpec"]  # everything else exported below is added by name
 
 
 # ── Universe helpers ─────────────────────────────────────────────────────────
@@ -257,11 +236,21 @@ def make_regions(top, traj, target_configs, out_dir,
         print(f"Selection for protein_shell: {sel_ps} | "
               f"atoms={sel_atoms.n_atoms}, residues={sel_atoms.residues.n_residues}")
         if sel_atoms.n_atoms == 0:
-            raise ValueError(
-                f"Selection for protein_shell is empty. "
-                f"mobile_sel='{ps_mobile}' matched 0 atoms near protein. "
-                f"Set PROTEIN_SHELL_SETTINGS['mobile_sel'] to the correct "
-                f"probe selection, or set CALC_PROTEIN_SHELL = False.")
+            # Topology sanity check — does the probe species exist at all?
+            # If 0 atoms match `ps_mobile` anywhere, it's a typo / wrong topology,
+            # not a transient empty-at-frame-0 condition.
+            if u.select_atoms(ps_mobile).n_atoms == 0:
+                raise ValueError(
+                    f"Selection for protein_shell is empty and no atoms match "
+                    f"mobile_sel='{ps_mobile}'. Check spelling/case, or set "
+                    f"CALC_PROTEIN_SHELL = False.")
+            # Probe atoms exist but none happen to be within cutoff of protein
+            # at the reference frame. This is OK for dynamic selections — they
+            # may visit during the trajectory (matches cavity-block behavior).
+            print(f"  WARNING: protein_shell empty at reference frame "
+                  f"({ps_mobile} present in topology but none within "
+                  f"{cutoff_a:.1f} Å of protein at frame 0; "
+                  f"probes may visit during trajectory).")
         regions.append(RegionSpec(
             "protein_shell", sel_ps,
             os.path.join(out_dir, "sp_protein_shell.csv"),
@@ -524,7 +513,7 @@ def write_summary(region, sp_result, fit1, fit2, out_path, do_exp_fit=True):
         f"  dt(analysis) = {region.actual_resolution_ns:.6f} ns/frame",
         "",
         "Results:",
-        f"  SP(tau_max) = {sp_end:.6f} (n_origins@tau_max={n_tau_end})",
+        f"  SP(tau_max) = {sp_end:.6f} (N0-weighted count@tau_max={n_tau_end})",
         f"  Residence time (integral): {tau_res_ns:.6f} ns",
     ]
 
