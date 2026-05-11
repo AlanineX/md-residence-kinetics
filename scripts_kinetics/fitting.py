@@ -4,25 +4,49 @@ Models (all amplitudes non-negative, sum to 1 by construction):
   Single-exp: P(t) = (1-c) * exp(-t/tau) + c
   Bi-exp:     P(t) = alpha1 * exp(-t/tau1) + alpha2 * exp(-t/tau2) + c
               where alpha1 = u*(1-c), alpha2 = (1-u)*(1-c)
+
+Survival forms come from `kinetics.models` so Method 1 and Method 2
+evaluate the same mathematical family.
 """
+
+import os
+import sys
 
 import numpy as np
 from scipy import optimize
 from scipy.optimize import brentq
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
-# ── Constrained model functions ──────────────────────────────────────────────
+# Import the shared model definitions directly from the file (avoids
+# pulling in kinetics/__init__.py which imports MDAnalysis).
+import importlib.util as _ilu
+_models_spec = _ilu.spec_from_file_location(
+    "kinetics_models", os.path.join(_HERE, "kinetics", "models.py"))
+_models = _ilu.module_from_spec(_models_spec)
+_models_spec.loader.exec_module(_models)
+survival_single_c = _models.survival_single_c
+survival_biexp_c = _models.survival_biexp_c
+apparent_residence_time = _models.apparent_residence_time
+fitted_residence_time = _models.fitted_residence_time
+mobile_residence_time = _models.mobile_residence_time
+single_c_uvc_to_canonical = _models.single_c_uvc_to_canonical
+biexp_c_uvc_to_canonical = _models.biexp_c_uvc_to_canonical
 
+
+# ── Constrained model functions (M1 fitter parameterisation) ────────────
 def f1_constrained(x, tau, c):
-    """Single-exp with alpha + c = 1."""
-    return (1.0 - c) * np.exp(-x / tau) + c
+    """Single-exp with alpha + c = 1; thin wrapper over `survival_single_c`."""
+    alpha, tau_can, c_can = single_c_uvc_to_canonical(tau, c)
+    return survival_single_c(x, alpha, tau_can, c_can)
 
 
 def f2_constrained(x, u, c, tau1, tau2):
-    """Bi-exp with alpha1 + alpha2 + c = 1, parameterised via u in [0,1]."""
-    alpha1 = u * (1.0 - c)
-    alpha2 = (1.0 - u) * (1.0 - c)
-    return alpha1 * np.exp(-x / tau1) + alpha2 * np.exp(-x / tau2) + c
+    """Bi-exp with alpha1 + alpha2 + c = 1; thin wrapper over `survival_biexp_c`."""
+    a_fast, tau_f, a_slow, tau_s, c_can = biexp_c_uvc_to_canonical(u, c, tau1, tau2)
+    return survival_biexp_c(x, a_fast, tau_f, a_slow, tau_s, c_can)
 
 
 # ── Information criteria ─────────────────────────────────────────────────────
@@ -52,18 +76,6 @@ def r_squared(y_true, y_pred):
     if ss_tot == 0:
         return 1.0 if ss_res == 0 else 0.0
     return 1.0 - ss_res / ss_tot
-
-
-def apparent_residence_time(t, P, c=0.0):
-    """Integral of (P(t) - c) from 0 to tau_max.  Model-free, finite window."""
-    if len(t) < 2:
-        return None
-    return float(np.trapezoid(np.asarray(P) - c, t))
-
-
-def fitted_residence_time(alpha1, tau1, alpha2, tau2):
-    """Integral of decaying part to infinity: alpha1*tau1 + alpha2*tau2."""
-    return alpha1 * tau1 + alpha2 * tau2
 
 
 def model_free_metrics(t, S, horizons=(1.0, 2.0, 5.0)):
@@ -123,6 +135,11 @@ def fit_single_exp(t, y):
 
     Returns dict with raw params [tau, c], all derived metrics, or None.
     """
+    t = np.asarray(t, dtype=float)
+    y = np.asarray(y, dtype=float)
+    mask = np.isfinite(t) & np.isfinite(y)
+    t = t[mask]
+    y = y[mask]
     n = len(t)
     if n < 2:
         return None
@@ -162,6 +179,9 @@ def fit_single_exp(t, y):
         "perr_c": perr[1],
         "r_squared": r_squared(y, yhat),
         "apparent_res_time": apparent_residence_time(t, y, c=c),
+        # Single-exp mobile residence time = τ (only one finite component,
+        # so the conditional mean ⟨t⟩|mobile reduces to τ trivially).
+        "mobile_res_time": float(tau_fit),
     }
 
 
@@ -169,8 +189,9 @@ def fit_bi_exp(t, y, tau_floor=None, tau_ceil=None, reject_degenerate=False):
     """Fit P(t) = alpha1*exp(-t/tau1) + alpha2*exp(-t/tau2) + c  (alpha1+alpha2+c=1).
 
     Parameterised as (u, c, tau1, tau2) where alpha1=u*(1-c), alpha2=(1-u)*(1-c).
-    The constant term `c` represents the immobilized fraction (probes still
-    bound at t → ∞). Returns dict with raw params + derived metrics, or None.
+    The constant term `c` represents an unresolved plateau over the observed
+    window, not a separately fitted third exponential species. Returns dict
+    with raw params + derived metrics, or None.
 
     Parameters
     ----------
@@ -179,15 +200,19 @@ def fit_bi_exp(t, y, tau_floor=None, tau_ceil=None, reject_degenerate=False):
     tau_ceil : float, optional
         Maximum allowed value for τ₁ and τ₂. Default None (= ∞, legacy).
         Pass `tau_max_ns` to prevent the fitter from running τ off into
-        absurd values when the SP curve has slow / unresolved tail —
-        which would otherwise be better captured by `c` (the immobilized
-        fraction term).
+        absurd values when the SP curve has slow / unresolved tail, which
+        would otherwise be better captured by `c` (the constant term).
     reject_degenerate : bool, optional
         If True, return None when the fit is degenerate:
           (a) τ₁ or τ₂ ≤ floor   (collapse to δ-spike)
           (b) τ₁ or τ₂ ≥ ceil/2  (runaway tail; should go into c)
           (c) one component amplitude < 1 % (single-exp is more honest)
     """
+    t = np.asarray(t, dtype=float)
+    y = np.asarray(y, dtype=float)
+    mask = np.isfinite(t) & np.isfinite(y)
+    t = t[mask]
+    y = y[mask]
     n = len(t)
     if n < 4:
         return None
@@ -197,22 +222,55 @@ def fit_bi_exp(t, y, tau_floor=None, tau_ceil=None, reject_degenerate=False):
     ceil_v = float(tau_ceil) if tau_ceil is not None else np.inf
     c0 = max(0.0, min(float(y[-1]), 1.0))
     tau0 = max(np.trapezoid(y, t), dt)
-    # Initial guesses must lie inside [floor, ceil]
-    p0_t1 = min(max(tau0 / 3.0, floor * 10), ceil_v * 0.5) if np.isfinite(ceil_v) else max(tau0 / 3.0, floor * 10)
-    p0_t2 = min(max(tau0 * 2.0, floor * 10), ceil_v * 0.5) if np.isfinite(ceil_v) else max(tau0 * 2.0, floor * 10)
+    def _clip_tau(v):
+        hi = ceil_v * 0.98 if np.isfinite(ceil_v) else np.inf
+        return min(max(float(v), floor * 10), hi) if np.isfinite(hi) else max(float(v), floor * 10)
 
-    try:
-        popt, pcov = optimize.curve_fit(
-            f2_constrained, t, y,
-            p0=(0.5, c0, p0_t1, p0_t2),
-            bounds=([0.0, 0.0, floor, floor],
-                    [1.0, 1.0, ceil_v, ceil_v]),
-            maxfev=50000,
-        )
-    except Exception:
+    # Multi-start matters for bi-exp curves; the model is symmetric and local
+    # minima otherwise swap/collapse components easily.
+    p0s = []
+    for u0 in (0.25, 0.5, 0.75):
+        for c_start in (c0, 0.0, min(max(float(y[-1]), 0.0), 0.8)):
+            p0s.append((u0, c_start,
+                        _clip_tau(tau0 / 4.0), _clip_tau(tau0 * 2.0)))
+            p0s.append((u0, c_start,
+                        _clip_tau(dt), _clip_tau(max(tau0 * 4.0, dt * 2.0))))
+
+    best = None
+    bounds = ([0.0, 0.0, floor, floor], [1.0, 1.0, ceil_v, ceil_v])
+    for p0 in p0s:
+        try:
+            popt_i, pcov_i = optimize.curve_fit(
+                f2_constrained, t, y,
+                p0=p0,
+                bounds=bounds,
+                maxfev=50000,
+            )
+        except Exception:
+            continue
+        yhat_i = f2_constrained(t, *popt_i)
+        rss_i = float(np.sum((y - yhat_i) ** 2))
+        if not np.isfinite(rss_i):
+            continue
+        if best is None or rss_i < best[0]:
+            best = (rss_i, popt_i, pcov_i)
+
+    if best is None:
         return None
 
+    _, popt, pcov = best
     u_val, c, tau1, tau2 = popt
+    swapped = tau1 > tau2
+    if swapped:
+        u_val = 1.0 - u_val
+        tau1, tau2 = tau2, tau1
+        # Transform covariance for params [u, c, tau1, tau2] -> [1-u, c, tau2, tau1].
+        J = np.array([[-1.0, 0.0, 0.0, 0.0],
+                      [0.0, 1.0, 0.0, 0.0],
+                      [0.0, 0.0, 0.0, 1.0],
+                      [0.0, 0.0, 1.0, 0.0]])
+        pcov = J @ pcov @ J.T
+    popt = np.array([u_val, c, tau1, tau2], dtype=float)
     alpha1 = u_val * (1.0 - c)
     alpha2 = (1.0 - u_val) * (1.0 - c)
 
@@ -259,6 +317,7 @@ def fit_bi_exp(t, y, tau_floor=None, tau_ceil=None, reject_degenerate=False):
         "r_squared": r_squared(y, yhat),
         "apparent_res_time": apparent_residence_time(t, y, c=c),
         "fitted_res_time": fitted_residence_time(alpha1, tau1, alpha2, tau2),
+        "mobile_res_time": mobile_residence_time(alpha1, tau1, alpha2, tau2),
         "t_half_fast": t_half_fast,
         "t_half_slow": t_half_slow,
         "t_half_overall": t_half_all,
