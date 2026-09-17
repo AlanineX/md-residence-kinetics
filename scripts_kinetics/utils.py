@@ -274,52 +274,37 @@ def make_regions(top, traj, target_configs, out_dir,
         if not chains:
             print("WARNING: No protein chains detected for per-residue analysis.")
         else:
-            # Build position -> [(chain_label, resid), ...] mapping
-            pos_map = {}  # {position: [(chain, resid), ...]}
-            for label, resids in chains.items():
-                min_resid = resids[0]
-                for rid in resids:
-                    pos = rid - min_resid  # 0-based position within chain
-                    pos_map.setdefault(pos, []).append((label, rid))
-
             per_res_dir = os.path.join(out_dir, "per_residue")
             os.makedirs(per_res_dir, exist_ok=True)
             n_added = 0
-            for pos in sorted(pos_map):
-                if not position_in_range(pos, res_ranges):
-                    continue
-                equiv = pos_map[pos]  # [(chain, resid), ...]
-                # Build combined selection across all equivalent residues
-                if chain_kw == "segid":
-                    parts = [f"(resid {rid} and segid {cl})"
-                             for cl, rid in equiv]
-                else:
-                    parts = [f"(resid {rid} and chainid {cl})"
-                             for cl, rid in equiv]
-                core = " or ".join(parts)
-                sel = (f"byres ({water_o_selection} and "
-                       f"around {cutoff_a:.1f} ({core}))")
-
-                # Get resname from first chain for labeling
-                ref_resid = equiv[0][1]
-                ref_res = u.select_atoms(f"resid {ref_resid} and protein")
-                resname = ref_res.residues[0].resname if ref_res.n_atoms > 0 else "UNK"
-                name = f"res_{pos}_{resname}"
-
-                regions.append(RegionSpec(
-                    name, sel,
-                    os.path.join(per_res_dir, f"sp_{name}.csv"),
-                    os.path.join(per_res_dir, f"summary_{name}.txt"),
-                    description=(f"Water shell of {resname} pos {pos} "
-                                 f"({len(equiv)} chains combined)."),
-                    time_resolution_ns=float(prs.get("time_resolution_ns", 0.01)),
-                    tau_max_ns=float(prs.get("tau_max_ns", 5.0)),
-                    t0_spacing_ns=float(prs.get("t0_spacing_ns", 0.5)),
-                    n_blocks=int(prs.get("n_blocks", n_blocks_default)),
-                ))
-                n_added += 1
+            for label, resids in sorted(chains.items()):
+                min_resid = resids[0]
+                for rid in resids:
+                    pos = rid - min_resid
+                    if not position_in_range(pos, res_ranges):
+                        continue
+                    if chain_kw == "segid":
+                        core = f"(resid {rid} and segid {label})"
+                    else:
+                        core = f"(resid {rid} and chainid {label})"
+                    sel = (f"byres ({water_o_selection} and "
+                           f"around {cutoff_a:.1f} {core})")
+                    ref_res = u.select_atoms(f"resid {rid} and {chain_kw} {label} and protein")
+                    resname = ref_res.residues[0].resname if ref_res.n_atoms else "UNK"
+                    name = f"{label}_{rid}_{resname}"
+                    regions.append(RegionSpec(
+                        name, sel,
+                        os.path.join(per_res_dir, f"sp_{name}.csv"),
+                        os.path.join(per_res_dir, f"summary_{name}.txt"),
+                        description=f"Water shell of chain {label} {resname}{rid}.",
+                        time_resolution_ns=float(prs.get("time_resolution_ns", 0.01)),
+                        tau_max_ns=float(prs.get("tau_max_ns", 5.0)),
+                        t0_spacing_ns=float(prs.get("t0_spacing_ns", 0.5)),
+                        n_blocks=int(prs.get("n_blocks", n_blocks_default)),
+                    ))
+                    n_added += 1
             print(f"Per-residue solvation: {n_added} positions, "
-                  f"{len(chains)} chains each.")
+                  f"chain-specific regions across {len(chains)} chains.")
 
     # Return universe to caller to avoid re-loading (MDA XTC reader bug)
     return regions, u

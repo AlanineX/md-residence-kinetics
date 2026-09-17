@@ -21,9 +21,8 @@ pip install -r requirements.txt
 ## Quick Start
 
 ```bash
-# 1. Copy the example config into the package directory
-cp config_extract_example.py scripts_kinetics/config_extract.py
-# Edit scripts_kinetics/config_extract.py: set TOP_PATH, TRAJ_PATH, OUT_DIR, and targets
+# 1. Edit TOP_PATH, TRAJ_PATH, and OUT_DIR
+nano scripts_kinetics/config_extract.py
 
 # 2. Run extraction + fitting
 cd scripts_kinetics
@@ -36,9 +35,9 @@ python run_plot.py
 ## What It Does
 
 1. **Counts** average probe (water/solute) occupancy per region
-2. **Computes** survival probability S(tau) via block-parallel time correlation
-3. **Fits** single-exp `(1-c)*exp(-t/tau) + c` and bi-exp models
-4. **Calculates** model-free metrics: RMST(t\*) and S(t\*) at fixed horizons
+2. **Computes** survival probability $S(\tau)$ via block-parallel time correlation
+3. **Fits** single-exp $(1-c)\exp\left(-\frac{t}{\tau}\right)+c$ and bi-exp models
+4. **Calculates** model-free metrics: $\operatorname{RMST}(t^*)$ and $S(t^*)$ at fixed horizons
 5. **Outputs** per-region CSVs, summary text files, SVG plots, and aggregate fitting CSVs
 
 ## Config Reference (`config_extract.py`)
@@ -80,7 +79,7 @@ Used in `PROTEIN_SHELL_SETTINGS`, `PER_RESIDUE_SETTINGS`, and per-target configs
 | Key | Values | Meaning |
 |-----|--------|---------|
 | `CALC_PROTEIN_SHELL` | `True`/`False` | SP for all water near protein |
-| `CALC_PER_RESIDUE_SHELL` | `None` = skip, `True` = all, `"0:49"` = range | Per-residue SP (chain-aware: equivalent residues across chains are combined) |
+| `CALC_PER_RESIDUE_SHELL` | `False` = skip, `True` = all, `"0:49"` = range | Per-residue SP; each chain and residue is analyzed separately |
 
 ### Target Configs
 
@@ -88,18 +87,24 @@ Used in `PROTEIN_SHELL_SETTINGS`, `PER_RESIDUE_SETTINGS`, and per-target configs
 
 ```python
 TARGET_CONFIGS = [
-    {"name": "my_region",
-     "probe_type": "water",           # "water" or "solute"
-     "resnames": ["ADP"],             # required for "solute"
+    {"name": "ligand_shell",
+     "probe_type": "solute",          # "water" or "solute"
+     "resnames": ["LIG"],             # replace LIG with its topology resname
      "resid_ranges": ["52 53 87"],    # protein residues (one string per chain)
      "chains": "ABCD",               # optional chain filter
      "time_resolution_ns": 0.01,
      "tau_max_ns": 5.0,
      "t0_spacing_ns": 0.5,
      "n_blocks": 5,
-     "description": "Water near my binding site"},
+     "description": "Ligand near my binding site"},
 ]
 ```
+
+`resnames` uses the residue name stored in the topology. For example, a ligand
+named `ATP` in the topology should use `"resnames": ["ATP"]`.
+
+For a per-residue water example, see
+[`examples/config_extract_barnase_water.py`](examples/config_extract_barnase_water.py).
 
 ## Output
 
@@ -119,9 +124,9 @@ TARGET_CONFIGS = [
 | `avg_count` / `std_count` | Mean probe occupancy in region |
 | `tau`, `tau1`, `tau2` | Exponential decay time constants (ns) |
 | `c` | Constant offset (non-exchanging fraction) |
-| `apparent_res_time` | Integral of (S(t) - c) from 0 to tau_max |
-| `fitted_res_time` | alpha1\*tau1 + alpha2\*tau2 (analytical integral to infinity) |
-| `t_half_overall` | Time when S(t) drops to midpoint between 1 and c |
+| `apparent_res_time` | Integral of $S(t)-c$ from 0 to $\tau_{\max}$ |
+| `fitted_res_time` | $\alpha_1\tau_1 + \alpha_2\tau_2$ (analytical integral to infinity) |
+| `t_half_overall` | Time when $S(t)$ drops to midpoint between 1 and $c$ |
 | `RMST_1ns`, `RMST_2ns`, `RMST_5ns` | Restricted mean survival time at 1/2/5 ns horizons (model-free) |
 | `S_1ns`, `S_2ns`, `S_5ns` | Raw SP value at 1/2/5 ns (model-free) |
 
