@@ -5,6 +5,7 @@ import csv
 import numpy as np
 import MDAnalysis as mda
 from dataclasses import dataclass
+from typing import Dict, Optional
 
 
 @dataclass
@@ -26,6 +27,9 @@ class RegionSpec:
     actual_resolution_ns: float = 0.0
     n_origins_estimated: int = 0
     valid_origin_range_ns: float = 0.0
+    # Optional additive-attribution components: {label: probe selection}.
+    component_selections: Optional[Dict[str, str]] = None
+    attribution_horizons_ns: tuple = (1.0, 2.0, 5.0)
 
 
 # ── Universe helpers ─────────────────────────────────────────────────────────
@@ -209,6 +213,22 @@ def make_regions(top, traj, target_configs, out_dir,
         else:
             raise ValueError(f"Unknown probe_type '{probe_type}' in config {name}")
 
+        component_selections = None
+        components = config.get("components")
+        if components:
+            if not isinstance(components, dict):
+                raise ValueError(f"components for {name} must be a label: core-selection mapping")
+            component_selections = {}
+            for label, component in components.items():
+                component_core = component if isinstance(component, str) else build_core_selection(
+                    component, chain_kw, segids, available_chains=available_chains)
+                if probe_type == "water":
+                    component_sel = (
+                        f"byres ({water_o_selection} and around {cutoff_a:.1f} {component_core})")
+                else:
+                    component_sel = f"byres (resname {rn} and around {cutoff_a:.1f} ({component_core}))"
+                component_selections[str(label)] = component_sel
+
         sel_atoms = u.select_atoms(sel)
         n_atoms = sel_atoms.n_atoms
         n_res = sel_atoms.residues.n_residues
@@ -244,6 +264,9 @@ def make_regions(top, traj, target_configs, out_dir,
             tau_max_ns=float(config.get("tau_max_ns", 25.0)),
             t0_spacing_ns=float(config.get("t0_spacing_ns", 0.5)),
             n_blocks=int(config.get("n_blocks", n_blocks_default)),
+            component_selections=component_selections,
+            attribution_horizons_ns=tuple(config.get(
+                "attribution_horizons_ns", (1.0, 2.0, 5.0))),
         ))
 
     if calc_protein_shell:
@@ -343,6 +366,17 @@ def validate_and_compute_settings(regions, dt_traj_ns, n_frames_total):
         region.actual_resolution_ns = actual_res
         region.n_origins_estimated = n_origins
         region.valid_origin_range_ns = valid_origin_range_ns
+
+        if region.component_selections:
+            invalid_horizons = [
+                horizon for horizon in region.attribution_horizons_ns
+                if horizon <= 0 or horizon > region.tau_max_ns
+            ]
+            if invalid_horizons:
+                errors_list.append(
+                    f"{region.name}: attribution horizons must be > 0 and <= "
+                    f"tau_max_ns ({region.tau_max_ns}); got {invalid_horizons}"
+                )
 
         print(f"  User settings (ns):")
         print(f"    time_resolution_ns = {region.time_resolution_ns} "
@@ -458,6 +492,9 @@ def write_run_log(regions, out_dir, top_path, traj_path,
             f"    tau_max_ns = {r.tau_max_ns}",
             f"    t0_spacing_ns = {r.t0_spacing_ns}",
             f"    n_blocks = {r.n_blocks}", "",
+            f"  Attribution components = "
+            f"{list(r.component_selections) if r.component_selections else []}",
+            f"  Attribution horizons (ns) = {r.attribution_horizons_ns}", "",
             "  Computed (frames):",
             f"    stride = {r.stride}",
             f"    tau_max_frames = {r.tau_max_frames}",

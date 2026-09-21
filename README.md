@@ -30,6 +30,9 @@ python run_extract.py
 
 # 3. (Optional) Re-fit/re-plot existing SP CSVs with different settings
 python run_plot.py
+
+# 4. (Optional) Plot existing additive-attribution CSVs independently
+python run_plot_attribution.py
 ```
 
 ## What It Does
@@ -39,6 +42,7 @@ python run_plot.py
 3. **Fits** single-exp $(1-c)\exp\left(-\frac{t}{\tau}\right)+c$ and bi-exp models
 4. **Calculates** model-free metrics: $\operatorname{RMST}(t^*)$ and $S(t^*)$ at fixed horizons
 5. **Outputs** per-region CSVs, summary text files, SVG plots, and aggregate fitting CSVs
+6. **Optionally decomposes** a regional SP curve into additive component contributions without double-counting overlapping shells
 
 ## Config Reference (`config_extract.py`)
 
@@ -70,7 +74,7 @@ Used in `PROTEIN_SHELL_SETTINGS`, `PER_RESIDUE_SETTINGS`, and per-target configs
 | Key | Example | Meaning |
 |-----|---------|---------|
 | `time_resolution_ns` | 0.01 | Time step for SP calculation. Frames are strided to match. |
-| `tau_max_ns` | 5.0 | Maximum lag time. **Must be < trajectory_length / 2.** |
+| `tau_max_ns` | 5.0 | Maximum lag time. **Must be < `trajectory_length / 2`.** |
 | `t0_spacing_ns` | 0.5 | Spacing between time origins. Smaller = better statistics, slower. Aim for >= 20 origins. |
 | `n_blocks` | 1 | Blocks for this target (overrides global `N_BLOCKS`). |
 
@@ -103,6 +107,39 @@ TARGET_CONFIGS = [
 `resnames` uses the residue name stored in the topology. For example, a ligand
 named `ATP` in the topology should use `"resnames": ["ATP"]`.
 
+### Additive Component Attribution
+
+Add a `components` mapping to any custom target when you need to identify which
+residues or subregions dominate the regional kinetics:
+
+```python
+TARGET_CONFIGS = [{
+    "name": "pocket",
+    "core": "protein and resid 10:20",
+    "components": {
+        "entrance": "protein and resid 10:14",
+        "core": "protein and resid 15:20",
+    },
+    "attribution_horizons_ns": [1.0, 2.0, 5.0],
+    "time_resolution_ns": 0.01,
+    "tau_max_ns": 5.0,
+    "t0_spacing_ns": 0.5,
+}]
+```
+
+For each time origin, a probe in $k$ overlapping component shells contributes
+$\frac{1}{k}$ to each shell. Its component label is fixed at that origin, while survival
+is followed in the union of all component shells. Therefore,
+
+$$
+S_{\mathrm{region}}(t) = \sum_j S_j^{\mathrm{contribution}}(t).
+$$
+
+This is initial-membership attribution: it answers which starting component
+contributed the surviving population. It does not mean that a probe remained in
+that same component for the full lag time. The extraction command writes the
+component data as CSV; it does not create an attribution plot.
+
 For a per-residue water example, see
 [`examples/config_extract_barnase_water.py`](examples/config_extract_barnase_water.py).
 
@@ -116,6 +153,20 @@ For a per-residue water example, see
 | `single_exp_fitting_results.csv` | All regions: 1-exp fit + counts + RMST |
 | `bi_exp_fitting_results.csv` | All regions: 2-exp fit + counts + RMST |
 | `run_settings.log` | Full run configuration |
+| `attribution_<name>.csv` | Regional SP and additive component curves |
+| `attribution_integrals_<name>.csv` | Component integrals and origin-population shares |
+
+### Standalone Attribution Plots
+
+Edit `config_plot_attribution.py`, then run `python run_plot_attribution.py`.
+This step reads existing `attribution_*.csv` files and does not load the
+trajectory, rerun extraction, or rerun decay fitting. The default plot uses
+increasing residue/component identifiers, identity-based harmonic colors, and
+no title. The configuration can instead rank by initial population percentage,
+integrated contribution, input order, alphabetical order, or an explicit manual
+order. Colors can follow component identity or stack position, with optional
+per-component overrides. The harmonic palette is interpolated to the exact
+number of components, so it supports fewer or more than seven residues.
 
 ### Aggregate CSV Columns
 

@@ -17,7 +17,7 @@ if __name__ == "__main__" and __package__ is None:
 
 try:
     from . import config_extract as cfg
-    from .kinetics import compute_sp
+    from .kinetics import compute_sp, compute_attributed_sp
     from .fitting import fit_single_exp, fit_bi_exp, model_free_metrics
     from .plotting import plot_sp_and_fits
     from .utils import (
@@ -26,7 +26,7 @@ try:
     )
 except ImportError:
     import config_extract as cfg
-    from kinetics import compute_sp
+    from kinetics import compute_sp, compute_attributed_sp
     from fitting import fit_single_exp, fit_bi_exp, model_free_metrics
     from plotting import plot_sp_and_fits
     from utils import (
@@ -35,6 +35,35 @@ except ImportError:
     )
 
 import numpy as np
+import csv
+
+
+def write_attribution_outputs(region, result, out_dir):
+    """Write additive curves and finite-horizon integrals; plotting is separate."""
+    labels = list(result["contributions"])
+    curve_path = os.path.join(out_dir, f"attribution_{region.name}.csv")
+    with open(curve_path, "w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["time_ns", "regional_survival", *labels, "closure_error"])
+        for i, time_ns in enumerate(result["tau_ns"]):
+            values = [result["contributions"][label][i] for label in labels]
+            writer.writerow([time_ns, result["regional_S"][i], *values,
+                             result["regional_S"][i] - sum(values)])
+
+    integral_path = os.path.join(out_dir, f"attribution_integrals_{region.name}.csv")
+    with open(integral_path, "w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["component", *[f"integral_{h:g}ns" for h in region.attribution_horizons_ns],
+                         "origin_population_share"])
+        for label in labels:
+            curve = result["contributions"][label]
+            integrals = []
+            for horizon in region.attribution_horizons_ns:
+                mask = result["tau_ns"] <= horizon + 1e-12
+                integrals.append(float(np.trapezoid(curve[mask], result["tau_ns"][mask]))
+                                 if np.count_nonzero(mask) >= 2 else np.nan)
+            writer.writerow([label, *integrals, curve[0]])
+    return curve_path, integral_path
 
 
 def main():
@@ -150,6 +179,16 @@ def main():
         summary_results.append((region.name, tau_res, sp["time_taken"]))
         all_fit_results.append((region.name, fit1, fit2))
         count_data[region.name] = (sp["avg_residues"], sp["std_residues"])
+
+        if region.component_selections:
+            print(f"  Computing additive attribution for {len(region.component_selections)} components...")
+            attribution = compute_attributed_sp(
+                region, start_frame=cfg.START_FRAME, stop_frame=cfg.STOP_FRAME,
+                intermittency=cfg.INTERMITTENCY, universe=u)
+            curve_path, integral_path = write_attribution_outputs(
+                region, attribution, cfg.OUT_DIR)
+            print(f"  Attribution closure error: {attribution['max_abs_closure_error']:.3e}")
+            print(f"  Attribution CSVs: {curve_path}, {integral_path}")
 
     # Aggregate CSVs
     if all_fit_results:

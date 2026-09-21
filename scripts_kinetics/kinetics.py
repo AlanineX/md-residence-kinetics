@@ -60,6 +60,103 @@ def _sp_sums_counts(list_of_sets, tau_max, t0_step=1, t0_stop=None):
     return sums, counts
 
 
+def _attributed_sp_sums_counts(component_sets, tau_max, t0_step=1, t0_stop=None):
+    """Decompose regional survival by overlapping component membership at t0.
+
+    ``component_sets`` maps labels to equal-length lists of probe-ID sets. A probe
+    initially present in k components receives 1/k of its regional weight in each.
+    It is subsequently followed in the union of all components, so contributions
+    sum exactly to the regional survival curve. This is initial-membership
+    attribution, not residence within an individual component.
+    """
+    if not component_sets:
+        raise ValueError("component_sets must contain at least one component")
+    labels = list(component_sets)
+    lengths = {len(component_sets[label]) for label in labels}
+    if len(lengths) != 1:
+        raise ValueError("all component set series must have equal length")
+    n = lengths.pop()
+    if n == 0:
+        raise ValueError("component set series must be non-empty")
+    if tau_max < 0 or tau_max >= n:
+        raise ValueError("tau_max must satisfy 0 <= tau_max < number of frames")
+    if t0_step is None or t0_step < 1:
+        raise ValueError("t0_step must be >= 1")
+    stop = n if t0_stop is None else max(0, min(int(t0_stop), n))
+    unions = [set().union(*(component_sets[label][i] for label in labels))
+              for i in range(n)]
+    sums = {label: np.zeros(tau_max + 1, dtype=float) for label in labels}
+    counts = np.zeros(tau_max + 1, dtype=int)
+
+    for t0 in range(0, stop, t0_step):
+        initial = unions[t0]
+        if not initial:
+            continue
+        memberships = {
+            probe: [label for label in labels if probe in component_sets[label][t0]]
+            for probe in initial
+        }
+        weights = {label: {} for label in labels}
+        normalizer = float(len(initial))
+        for probe, probe_labels in memberships.items():
+            weight = 1.0 / (normalizer * len(probe_labels))
+            for label in probe_labels:
+                weights[label][probe] = weight
+        alive = set(initial)
+        max_tau = min(tau_max, n - 1 - t0)
+        for tau in range(max_tau + 1):
+            if tau:
+                alive &= unions[t0 + tau]
+            for label in labels:
+                sums[label][tau] += sum(weights[label].get(probe, 0.0) for probe in alive)
+            counts[tau] += 1
+
+    contributions = {
+        label: np.divide(values, counts, out=np.full_like(values, np.nan), where=counts > 0)
+        for label, values in sums.items()
+    }
+    regional_sums, regional_counts = _sp_sums_counts(
+        unions, tau_max, t0_step=t0_step, t0_stop=stop)
+    regional = np.divide(
+        regional_sums, regional_counts,
+        out=np.full_like(regional_sums, np.nan), where=regional_counts > 0)
+    if not np.array_equal(counts, regional_counts):
+        raise RuntimeError("attribution and regional survival used different origins")
+    return np.arange(tau_max + 1), regional, contributions, counts
+
+
+def compute_attributed_sp(region, start_frame=0, stop_frame=None,
+                          intermittency=0, universe=None):
+    """Calculate additive initial-component attribution for a configured region."""
+    if universe is None:
+        raise ValueError("compute_attributed_sp requires a loaded Universe")
+    if not region.component_selections:
+        raise ValueError(f"region {region.name} has no component selections")
+    u = universe
+    n_total = len(u.trajectory)
+    start = max(0, int(start_frame or 0))
+    stop = n_total if stop_frame is None else min(int(stop_frame), n_total)
+    selections = {
+        label: u.select_atoms(selection, updating=True)
+        for label, selection in region.component_selections.items()
+    }
+    component_sets = {label: [] for label in selections}
+    for _ts in u.trajectory[start:stop:region.stride]:
+        for label, atoms in selections.items():
+            component_sets[label].append(set(atoms.residues.resindices))
+    if intermittency:
+        component_sets = {
+            label: correct_intermittency(sets, intermittency=intermittency)
+            for label, sets in component_sets.items()
+        }
+    taus, regional, contributions, counts = _attributed_sp_sums_counts(
+        component_sets, region.tau_max_frames, t0_step=region.t0_step)
+    tau_ns = taus * region.actual_resolution_ns
+    closure = regional - np.sum(np.stack(list(contributions.values())), axis=0)
+    return dict(tau_ns=tau_ns, regional_S=regional, contributions=contributions,
+                counts=counts, max_abs_closure_error=float(np.nanmax(np.abs(closure))))
+
+
 def _sp_on_block(top, traj, selection, origin_start, origin_stop, load_stop,
                  stride, tau_max_frames, t0_step, intermittency, universe=None):
     """Worker: compute SP for time-origins in [origin_start, origin_stop)."""
