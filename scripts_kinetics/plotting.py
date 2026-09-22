@@ -138,11 +138,13 @@ def plot_attribution(time_ns, regional, components, labels, name, outdir,
 
 def plot_sp_and_fits(tau, S, fit1, fit2, name, outdir, dpi=150, alpha=0.65,
                      x_max_plot=0.5, n_bins=20, bin_spacing_factor=0.8,
-                     base_fontsize=16):
+                     base_fontsize=16, fit_legend_mode="separate"):
     """Plot SP histogram with stacked component bars and fitted curves.
 
-    Saves: fit_{name}.svg (main plot) and fit_{name}_equations.svg (legend).
+    fit_legend_mode may be "separate", "on_plot", or "none".
     """
+    if fit_legend_mode not in {"separate", "on_plot", "none"}:
+        raise ValueError("fit_legend_mode must be 'separate', 'on_plot', or 'none'")
     os.makedirs(outdir, exist_ok=True)
     plt.rc("font", family="Liberation Sans", size=base_fontsize)
 
@@ -243,14 +245,6 @@ def plot_sp_and_fits(tau, S, fit1, fit2, name, outdir, dpi=150, alpha=0.65,
                         bbox_to_anchor=(0.98, 1.0),
                         fontsize=base_fontsize * 0.9, frameon=False)
     ax.add_artist(legend1)
-    ax.tick_params(axis="x", labelsize=base_fontsize * 0.9)
-    ax.tick_params(axis="y", labelsize=base_fontsize * 0.9)
-
-    fig.savefig(os.path.join(outdir, f"fit_{name}.svg"),
-                dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
-
-    # Legend 2: equation text as separate SVG
     eq_h, eq_l = [], []
     if single_label is not None:
         eq_h.append(Line2D([0], [0], linestyle=":", lw=3.5, color="darkorange"))
@@ -258,7 +252,24 @@ def plot_sp_and_fits(tau, S, fit1, fit2, name, outdir, dpi=150, alpha=0.65,
     if bi_label is not None:
         eq_h.append(Line2D([0], [0], linestyle="--", lw=3.0, color="darkred"))
         eq_l.append(bi_label)
-    if eq_h:
+    if fit_legend_mode == "on_plot" and eq_h:
+        legend2 = ax.legend(eq_h, eq_l, loc="center right",
+                            bbox_to_anchor=(0.98, 0.52),
+                            fontsize=base_fontsize * 0.78, frameon=False,
+                            labelspacing=1.0, handlelength=3.0)
+        for txt in legend2.get_texts():
+            txt.set_linespacing(1.4)
+    ax.tick_params(axis="x", labelsize=base_fontsize * 0.9)
+    ax.tick_params(axis="y", labelsize=base_fontsize * 0.9)
+
+    fig.savefig(os.path.join(outdir, f"fit_{name}.svg"),
+                dpi=dpi, bbox_inches="tight")
+    fig.savefig(os.path.join(outdir, f"fit_{name}.png"),
+                dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
+    # Legend 2: equation text as separate SVG
+    if fit_legend_mode == "separate" and eq_h:
         fig_eq, ax_eq = plt.subplots(figsize=(8, 3))
         ax_eq.axis("off")
         leg = ax_eq.legend(eq_h, eq_l, loc="center",
@@ -267,5 +278,7 @@ def plot_sp_and_fits(tau, S, fit1, fit2, name, outdir, dpi=150, alpha=0.65,
         for txt in leg.get_texts():
             txt.set_linespacing(1.6)
         fig_eq.savefig(os.path.join(outdir, f"fit_{name}_equations.svg"),
+                       dpi=dpi, bbox_inches="tight")
+        fig_eq.savefig(os.path.join(outdir, f"fit_{name}_equations.png"),
                        dpi=dpi, bbox_inches="tight")
         plt.close(fig_eq)

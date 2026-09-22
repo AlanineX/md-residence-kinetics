@@ -92,6 +92,7 @@ def main():
                 n_bins=cfg.n_bins,
                 bin_spacing_factor=cfg.bin_spacing_factor,
                 base_fontsize=cfg.base_fontsize,
+                fit_legend_mode=getattr(cfg, "fit_legend_mode", "separate"),
             )
             print(f"  Plots saved to {cfg.OUTPUT_PATH}")
 

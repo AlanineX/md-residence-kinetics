@@ -164,6 +164,7 @@ def main():
                 x_max_plot=cfg.PLOT_X_MAX,
                 n_bins=cfg.PLOT_N_BINS,
                 bin_spacing_factor=cfg.PLOT_BIN_SPACING,
+                fit_legend_mode=getattr(cfg, "PLOT_FIT_LEGEND_MODE", "separate"),
             )
             print(f"  Plots saved to {plot_dir}")
 
